@@ -1,8 +1,11 @@
+import argparse
 import os
 import sys
 import yaml
 from pathlib import Path
 from dotenv import load_dotenv
+
+__version__ = "0.3.0"
 
 
 def check_setup() -> tuple[bool, list[str]]:
@@ -67,6 +70,17 @@ def show_setup_guide(missing: list[str]):
 
 
 def main():
+    # Argument parsing
+    parser = argparse.ArgumentParser(
+        description="Network Agent - KI-gesteuerter Netzwerk-Scanner"
+    )
+    parser.add_argument(
+        "--version", "-v",
+        action="version",
+        version=f"Network Agent v{__version__}"
+    )
+    parser.parse_args()
+
     # Load environment variables
     load_dotenv()
 
