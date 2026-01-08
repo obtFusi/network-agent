@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 
 def check_setup() -> tuple[bool, list[str]]:
