@@ -1,0 +1,9 @@
+services:
+  network-agent:
+    build: .
+    image: network-agent:latest
+    network_mode: host  # Für LAN-Zugriff (nur Linux/WSL2)
+    env_file:
+      - .env
+    stdin_open: true    # -i
+    tty: true           # -t
