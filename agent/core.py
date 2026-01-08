@@ -22,6 +22,10 @@ class NetworkAgent:
         self.max_iterations = config["agent"]["max_iterations"]
         self.verbose = config["agent"]["verbose"]
 
+        # Token tracking
+        self.total_tokens = 0
+        self.last_usage = None
+
     def run(self, user_input: str) -> str:
         """Führt Agent-Loop aus"""
         messages = [
@@ -36,6 +40,11 @@ class NetworkAgent:
             # LLM aufrufen
             response = self.llm.chat(messages, tools=self.tools_schema)
             message = response.choices[0].message
+
+            # Token usage tracken
+            if hasattr(response, 'usage') and response.usage:
+                self.last_usage = response.usage
+                self.total_tokens += response.usage.total_tokens
 
             # Keine Tool-Calls? → Fertig
             if not message.tool_calls:

@@ -38,6 +38,11 @@ def main():
             response = agent.run(user_input)
             print(f"\n{response}")
 
+            # Token usage anzeigen
+            if agent.last_usage:
+                u = agent.last_usage
+                print(f"\n[This response: {u.total_tokens} tokens ({u.prompt_tokens} in, {u.completion_tokens} out) | Session total: {agent.total_tokens}]")
+
         except KeyboardInterrupt:
             print("\n\nBye!")
             break
