@@ -1,5 +1,4 @@
 import subprocess
-import os
 from tools.base import BaseTool
 from tools.validation import validate_network
 
@@ -50,7 +49,7 @@ class PingSweepTool(BaseTool):
             )
             # Wenn "Host is up" gefunden wird, funktioniert ICMP
             return "Host is up" in result.stdout
-        except:
+        except Exception:
             return False
 
     def execute(self, network: str, method: str = "auto") -> str:

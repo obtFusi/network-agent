@@ -1,13 +1,29 @@
+# LLM Provider Konfiguration
+# Funktioniert mit jeder OpenAI-kompatiblen API
+#
+# WICHTIG: Alle Werte müssen an deinen Provider angepasst werden!
+
 llm:
-  venice:
-    model: "llama-3.3-70b"
+  provider:
+    # Model-ID (REQUIRED - abhängig vom Provider)
+    # Beispiele: gpt-4, gpt-3.5-turbo, llama-3.3-70b, mistral-large, etc.
+    model: ""  # <-- HIER DEIN MODEL EINTRAGEN
+
+    # API Endpoint (REQUIRED)
+    # Venice.ai:  https://api.venice.ai/api/v1
+    # OpenAI:     https://api.openai.com/v1
+    # Ollama:     http://localhost:11434/v1
+    # LM Studio:  http://localhost:1234/v1
+    # Together:   https://api.together.xyz/v1
+    # Groq:       https://api.groq.com/openai/v1
+    base_url: ""  # <-- HIER DEINE API URL EINTRAGEN
+
     temperature: 0.7
     max_tokens: 4096
-    base_url: "https://api.venice.ai/api/v1"
 
-  perplexity:  # Für später
-    model: "llama-3.1-sonar-large-128k-online"
-    base_url: "https://api.perplexity.ai"
+    # Context-Limit (Optional - wird automatisch von /models abgefragt)
+    # Nur setzen falls API keine Info liefert
+    # max_context_tokens: 8192
 
 agent:
   max_iterations: 10
@@ -15,14 +31,14 @@ agent:
 
 tools:
   network:
+    # Erlaubte Netzwerke für Scans (CIDR)
     allowed_networks:
       - "192.168.0.0/16"
       - "10.0.0.0/8"
       - "172.16.0.0/12"
-    timeout: 60  # seconds
+    timeout: 60
 
-# Scan-Limits (Guardrails)
 scan:
-  max_hosts: 65536      # Maximum Hosts pro Scan (/16)
-  allow_public: true    # Öffentliche IPs erlauben (false = nur private)
-  tcp_ports: "22,80,443,8080,3389,5900"  # Ports für TCP-Connect Scan
+  max_hosts: 65536
+  allow_public: true
+  tcp_ports: "22,80,443,8080,3389,5900"
