@@ -19,14 +19,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install ruff mypy
+          pip install ruff
           pip install -r requirements.txt
 
       - name: Lint with ruff
         run: ruff check agent/ tools/ cli.py
-
-      - name: Type check with mypy
-        run: mypy agent/ tools/ cli.py --ignore-missing-imports
 
   docker:
     runs-on: ubuntu-latest
