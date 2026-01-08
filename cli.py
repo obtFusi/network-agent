@@ -19,7 +19,7 @@ def main():
     # Initialize agent
     print("Network Agent startet...")
     print(f"   Model: {config['llm']['venice']['model']}")
-    print(f"   Type 'exit' or 'quit' to stop\n")
+    print("   Type 'exit' or 'quit' to stop\n")
 
     agent = NetworkAgent(config, system_prompt)
 
