@@ -1,0 +1,21 @@
+llm:
+  venice:
+    model: "llama-3.3-70b"
+    temperature: 0.7
+    max_tokens: 4096
+    base_url: "https://api.venice.ai/api/v1"
+
+  perplexity:  # Für später
+    model: "llama-3.1-sonar-large-128k-online"
+    base_url: "https://api.perplexity.ai"
+
+agent:
+  max_iterations: 10
+  verbose: true
+
+tools:
+  network:
+    allowed_networks:
+      - "192.168.0.0/16"
+      - "10.0.0.0/8"
+    timeout: 30  # seconds
