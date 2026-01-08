@@ -25,10 +25,13 @@ Ich habe 7 aktive Geräte gefunden:
 
 1. **Docker** - [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)
 2. **Venice.ai API Key** - Kostenlos unter [venice.ai](https://venice.ai) registrieren
+3. **Git** (optional) - [Download Git](https://git-scm.com/downloads)
 
 ## Installation (Schritt für Schritt)
 
 ### Schritt 1: Repository herunterladen
+
+**Option A: Mit Git (empfohlen)**
 
 Öffne ein Terminal (Windows: PowerShell, macOS/Linux: Terminal) und führe aus:
 
@@ -36,6 +39,12 @@ Ich habe 7 aktive Geräte gefunden:
 git clone https://github.com/obtFusi/network-agent.git
 cd network-agent
 ```
+
+**Option B: Ohne Git**
+
+1. Lade das Repository als ZIP: [Download ZIP](https://github.com/obtFusi/network-agent/archive/refs/heads/main.zip)
+2. Entpacke die ZIP-Datei
+3. Öffne ein Terminal im entpackten Ordner `network-agent-main`
 
 ### Schritt 2: API Key einrichten
 
