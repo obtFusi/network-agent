@@ -26,23 +26,11 @@ Ich habe 7 aktive Geräte gefunden:
 1. **Docker** - [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)
 2. **Venice.ai API Key** - Kostenlos unter [venice.ai](https://venice.ai) registrieren
 
-## Schnellstart
-
-```bash
-git clone https://github.com/obtFusi/network-agent.git
-cd network-agent
-cp .env.example .env        # Windows: copy .env.example .env
-# .env öffnen und VENICE_API_KEY eintragen
-./start.sh                  # Windows: start.bat
-```
-
-Das wars! Das Script baut automatisch das Docker Image und startet den Agent.
-
----
-
-## Ausführliche Installation
+## Installation (Schritt für Schritt)
 
 ### Schritt 1: Repository herunterladen
+
+Öffne ein Terminal (Windows: PowerShell, macOS/Linux: Terminal) und führe aus:
 
 ```bash
 git clone https://github.com/obtFusi/network-agent.git
@@ -51,41 +39,50 @@ cd network-agent
 
 ### Schritt 2: API Key einrichten
 
+Kopiere die Beispiel-Konfiguration:
+
 **Windows (PowerShell):**
 ```powershell
 copy .env.example .env
-notepad .env
 ```
 
 **macOS/Linux:**
 ```bash
 cp .env.example .env
-nano .env
 ```
 
-Trage deinen Venice.ai API Key ein:
+Öffne die `.env` Datei mit einem Texteditor und trage deinen Venice.ai API Key ein:
 ```
 VENICE_API_KEY=dein_api_key_hier
 ```
 
-### Schritt 3: Starten
+### Schritt 3: Docker Image erstellen
 
-**Einfach (empfohlen):**
-```bash
-./start.sh          # Linux/macOS/WSL2
-start.bat           # Windows
-```
-
-**Oder mit Docker Compose:**
-```bash
-docker compose up --build
-```
-
-**Oder manuell:**
 ```bash
 docker build -t network-agent:latest .
+```
+
+Das dauert beim ersten Mal 1-2 Minuten (Downloads).
+
+### Schritt 4: Agent starten
+
+**Linux:**
+```bash
 docker run -it --rm --network host --env-file .env network-agent:latest
 ```
+
+**Windows mit WSL2 (empfohlen für volle Funktionalität):**
+
+Öffne ein WSL-Terminal und führe aus:
+```bash
+docker run -it --rm --network host --env-file .env network-agent:latest
+```
+
+**Windows ohne WSL / macOS:**
+```bash
+docker run -it --rm --env-file .env network-agent:latest
+```
+*Hinweis: Ohne `--network host` ist der Scan auf das Docker-interne Netzwerk beschränkt.*
 
 ## Verwendung
 
@@ -107,14 +104,16 @@ Beenden mit `exit` oder `quit`.
 
 ## Plattform-Kompatibilität
 
-| System | LAN-Scan möglich? | Wie starten? |
-|--------|-------------------|--------------|
-| Linux | Ja | `--network host` verwenden |
-| Windows + WSL2 | Ja | Im WSL-Terminal starten |
-| Windows (nur PowerShell) | Eingeschränkt | Nur Docker-Netzwerk sichtbar |
-| macOS | Eingeschränkt | Nur Docker-Netzwerk sichtbar |
+| System | LAN-Scan | Methode | Wie starten? |
+|--------|----------|---------|--------------|
+| Linux | ✅ Vollständig | ICMP Ping | `--network host` |
+| Windows + WSL2 | ✅ Vollständig | ICMP Ping | Im WSL-Terminal |
+| Windows (PowerShell) | ✅ Ja | TCP-Connect | Normal starten |
+| macOS | ✅ Ja | TCP-Connect | Normal starten |
 
-**Warum die Einschränkung?** Docker unter Windows/macOS läuft in einer VM. `--network host` (direkter Netzwerkzugriff) funktioniert nur unter Linux bzw. WSL2.
+**Automatische Erkennung:** Der Agent erkennt automatisch, ob ICMP-Ping möglich ist. Falls nicht (Docker auf Windows/macOS), wird automatisch TCP-Connect Scan verwendet. Dieser findet Geräte anhand offener Ports (22, 80, 443, 8080, 3389, 5900).
+
+**Hinweis:** TCP-Connect findet nur Geräte mit offenen Ports. Für vollständige Scans empfehlen wir Linux oder WSL2.
 
 ## Troubleshooting
 
@@ -125,7 +124,7 @@ Beenden mit `exit` oder `quit`.
 → Das Netzwerk ist zu groß oder nicht erreichbar. Versuche ein kleineres Subnetz (z.B. /28 statt /24).
 
 **Keine Geräte gefunden (Windows/macOS)**
-→ Ohne WSL2 kannst du nur Docker-interne Netzwerke scannen. Installiere [WSL2](https://docs.microsoft.com/de-de/windows/wsl/install).
+→ TCP-Connect Scan findet nur Geräte mit offenen Standard-Ports. Für vollständige Erkennung: WSL2 nutzen oder `method: tcp` mit zusätzlichen Ports anfragen.
 
 ## Wie funktioniert es technisch?
 
@@ -136,7 +135,8 @@ Du: "Welche Geräte sind online?"
     (versteht Anfrage, wählt Tool)
          ↓
     ping_sweep Tool
-    (führt "nmap -sn" aus)
+    ├─ Linux/WSL2: nmap -sn (ICMP Ping)
+    └─ macOS/Win:  nmap -sT (TCP-Connect)
          ↓
     Venice.ai LLM
     (interpretiert nmap-Output)
@@ -148,10 +148,6 @@ Du: "5 Geräte gefunden: ..."
 
 ```
 network-agent/
-├── start.sh            # Startscript (Linux/macOS/WSL2)
-├── start.bat           # Startscript (Windows)
-├── docker-compose.yml  # Docker Compose Config
-├── Dockerfile          # Container-Definition
 ├── cli.py              # Hauptprogramm (REPL)
 ├── agent/
 │   ├── core.py         # KI-Agent mit Tool-Loop
@@ -164,6 +160,7 @@ network-agent/
 │   ├── settings.yaml   # Konfiguration
 │   └── prompts/
 │       └── system.md   # System-Prompt für KI
+├── Dockerfile          # Container-Definition
 ├── requirements.txt    # Python-Abhängigkeiten
 └── .env.example        # API-Key Vorlage
 ```
