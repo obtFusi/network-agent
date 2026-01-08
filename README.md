@@ -39,7 +39,7 @@ cd network-agent
 
 ### Schritt 2: API Key einrichten
 
-Kopiere die Beispiel-Konfiguration:
+Erstelle deine Konfigurationsdatei aus der Vorlage:
 
 **Windows (PowerShell):**
 ```powershell
