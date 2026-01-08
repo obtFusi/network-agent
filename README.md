@@ -26,11 +26,23 @@ Ich habe 7 aktive Geräte gefunden:
 1. **Docker** - [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)
 2. **Venice.ai API Key** - Kostenlos unter [venice.ai](https://venice.ai) registrieren
 
-## Installation (Schritt für Schritt)
+## Schnellstart
+
+```bash
+git clone https://github.com/obtFusi/network-agent.git
+cd network-agent
+cp .env.example .env        # Windows: copy .env.example .env
+# .env öffnen und VENICE_API_KEY eintragen
+./start.sh                  # Windows: start.bat
+```
+
+Das wars! Das Script baut automatisch das Docker Image und startet den Agent.
+
+---
+
+## Ausführliche Installation
 
 ### Schritt 1: Repository herunterladen
-
-Öffne ein Terminal (Windows: PowerShell, macOS/Linux: Terminal) und führe aus:
 
 ```bash
 git clone https://github.com/obtFusi/network-agent.git
@@ -39,50 +51,41 @@ cd network-agent
 
 ### Schritt 2: API Key einrichten
 
-Kopiere die Beispiel-Konfiguration:
-
 **Windows (PowerShell):**
 ```powershell
 copy .env.example .env
+notepad .env
 ```
 
 **macOS/Linux:**
 ```bash
 cp .env.example .env
+nano .env
 ```
 
-Öffne die `.env` Datei mit einem Texteditor und trage deinen Venice.ai API Key ein:
+Trage deinen Venice.ai API Key ein:
 ```
 VENICE_API_KEY=dein_api_key_hier
 ```
 
-### Schritt 3: Docker Image erstellen
+### Schritt 3: Starten
 
+**Einfach (empfohlen):**
+```bash
+./start.sh          # Linux/macOS/WSL2
+start.bat           # Windows
+```
+
+**Oder mit Docker Compose:**
+```bash
+docker compose up --build
+```
+
+**Oder manuell:**
 ```bash
 docker build -t network-agent:latest .
-```
-
-Das dauert beim ersten Mal 1-2 Minuten (Downloads).
-
-### Schritt 4: Agent starten
-
-**Linux:**
-```bash
 docker run -it --rm --network host --env-file .env network-agent:latest
 ```
-
-**Windows mit WSL2 (empfohlen für volle Funktionalität):**
-
-Öffne ein WSL-Terminal und führe aus:
-```bash
-docker run -it --rm --network host --env-file .env network-agent:latest
-```
-
-**Windows ohne WSL / macOS:**
-```bash
-docker run -it --rm --env-file .env network-agent:latest
-```
-*Hinweis: Ohne `--network host` ist der Scan auf das Docker-interne Netzwerk beschränkt.*
 
 ## Verwendung
 
@@ -145,6 +148,10 @@ Du: "5 Geräte gefunden: ..."
 
 ```
 network-agent/
+├── start.sh            # Startscript (Linux/macOS/WSL2)
+├── start.bat           # Startscript (Windows)
+├── docker-compose.yml  # Docker Compose Config
+├── Dockerfile          # Container-Definition
 ├── cli.py              # Hauptprogramm (REPL)
 ├── agent/
 │   ├── core.py         # KI-Agent mit Tool-Loop
@@ -157,7 +164,6 @@ network-agent/
 │   ├── settings.yaml   # Konfiguration
 │   └── prompts/
 │       └── system.md   # System-Prompt für KI
-├── Dockerfile          # Container-Definition
 ├── requirements.txt    # Python-Abhängigkeiten
 └── .env.example        # API-Key Vorlage
 ```
