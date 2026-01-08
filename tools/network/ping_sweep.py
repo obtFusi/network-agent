@@ -1,11 +1,16 @@
 import subprocess
 import os
 from tools.base import BaseTool
+from tools.validation import validate_network
 
 
 class PingSweepTool(BaseTool):
     # Standard-Ports für TCP-Connect Scan (wenn ICMP nicht verfügbar)
     COMMON_PORTS = "22,80,443,8080,3389,5900"
+
+    # Konfigurierbare Limits
+    MAX_HOSTS = 65536  # /16 Maximum
+    ALLOW_PUBLIC = True  # Öffentliche IPs erlauben
 
     @property
     def name(self) -> str:
@@ -50,6 +55,18 @@ class PingSweepTool(BaseTool):
 
     def execute(self, network: str, method: str = "auto") -> str:
         """Führt Netzwerk-Scan aus"""
+        # === VALIDIERUNG (Guardrails) ===
+        valid, error, normalized_network = validate_network(
+            network,
+            max_hosts=self.MAX_HOSTS,
+            allow_public=self.ALLOW_PUBLIC
+        )
+        if not valid:
+            return f"Validierungsfehler: {error}"
+
+        # Normalisiertes Netzwerk verwenden (z.B. 192.168.1.1/24 -> 192.168.1.0/24)
+        network = normalized_network
+
         try:
             # Methode bestimmen
             if method == "auto":
