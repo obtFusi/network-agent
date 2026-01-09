@@ -1,0 +1,3 @@
+# act configuration
+# Only run CI workflow (not release.yml, codeql.yml)
+--workflows=.github/workflows/ci.yml

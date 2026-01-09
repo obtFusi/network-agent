@@ -55,7 +55,7 @@ class TestPingSweepTool:
 
         # Also mock _has_raw_socket_access to return True (ICMP mode)
         with patch.object(tool, "_has_raw_socket_access", return_value=True):
-            result = tool.execute(network="192.0.2.0/28")
+            tool.execute(network="192.0.2.0/28")
 
         # Verify nmap was called
         mock_run.assert_called()
