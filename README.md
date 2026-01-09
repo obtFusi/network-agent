@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.3.5-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.6-blue.svg)](CHANGELOG.md)
 
 Ein KI-gesteuerter Netzwerk-Scanner. Statt komplizierte Terminal-Befehle zu lernen, stellst du einfach Fragen wie *"Welche Geräte sind in meinem Netzwerk?"* - der Agent erledigt den Rest.
 
@@ -158,6 +158,7 @@ Jetzt kannst du Fragen stellen:
 **Commands:**
 - `/help` - Verfügbare Befehle anzeigen
 - `/tools` - Verfügbare Tools auflisten (Name + Beschreibung)
+- `/config` - LLM-Konfiguration anzeigen (Model, Base URL, Context-Limit)
 - `/status` - Session-Statistik anzeigen (Tokens, Context-Auslastung, Truncations)
 - `/version` - Version anzeigen
 - `/clear` - Session-Speicher löschen

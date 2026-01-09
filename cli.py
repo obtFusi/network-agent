@@ -5,7 +5,49 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-__version__ = "0.3.5"
+__version__ = "0.3.6"
+
+
+def truncate_description(desc: str, max_length: int = 60) -> str:
+    """Kürzt eine Beschreibung auf den ersten Satz oder max_length Zeichen.
+
+    Args:
+        desc: Die zu kürzende Beschreibung
+        max_length: Maximale Länge (default: 60)
+
+    Returns:
+        Gekürzte Beschreibung
+    """
+    if not desc:
+        return ""
+    if ". " in desc:
+        return desc.split(". ")[0] + "."
+    if len(desc) > max_length:
+        return desc[: max_length - 3] + "..."
+    return desc
+
+
+def get_help_text() -> str:
+    """Gibt den Hilfetext für alle Commands zurück."""
+    return """Commands:
+  /help    - Show available commands
+  /tools   - List available tools
+  /config  - Show LLM configuration
+  /status  - Show session statistics
+  /version - Show version
+  /clear   - Reset session
+  /exit    - Quit"""
+
+
+def get_tools_text() -> str:
+    """Gibt die Liste aller Tools zurück (ohne Agent-Initialisierung)."""
+    from tools import get_all_tools
+
+    lines = ["Available Tools:"]
+    for tool in get_all_tools():
+        desc = truncate_description(tool.description)
+        lines.append(f"  {tool.name} - {desc}")
+    return "\n".join(lines)
 
 
 def check_setup() -> tuple[bool, list[str]]:
@@ -77,12 +119,27 @@ def main():
     parser.add_argument(
         "--version", "-v", action="version", version=f"Network Agent v{__version__}"
     )
-    parser.parse_args()
+    parser.add_argument(
+        "--help-commands", action="store_true", help="Show available REPL commands"
+    )
+    parser.add_argument(
+        "--list-tools", action="store_true", help="List available tools"
+    )
+    args = parser.parse_args()
+
+    # Commands die OHNE LLM-Setup funktionieren
+    if args.help_commands:
+        print(get_help_text())
+        sys.exit(0)
+
+    if args.list_tools:
+        print(get_tools_text())
+        sys.exit(0)
 
     # Load environment variables
     load_dotenv()
 
-    # Setup-Check
+    # Setup-Check (nur für interaktiven Modus)
     is_configured, missing = check_setup()
     if not is_configured:
         show_setup_guide(missing)
@@ -148,25 +205,18 @@ def main():
                     continue
 
                 if cmd == "/tools":
-                    print("Available Tools:")
-                    for tool in agent.tools:
-                        # Truncate description to first sentence or 60 chars
-                        desc = tool.description
-                        if ". " in desc:
-                            desc = desc.split(". ")[0] + "."
-                        elif len(desc) > 60:
-                            desc = desc[:57] + "..."
-                        print(f"  {tool.name} - {desc}")
+                    print(get_tools_text())
+                    continue
+
+                if cmd == "/config":
+                    print("LLM Configuration:")
+                    print(f"  Model: {agent.llm.model}")
+                    print(f"  Base URL: {agent.llm.base_url}")
+                    print(f"  Context Limit: {agent.context_limit:,} tokens")
                     continue
 
                 if cmd == "/help":
-                    print("Commands:")
-                    print("  /help    - Show available commands")
-                    print("  /tools   - List available tools")
-                    print("  /status  - Show session statistics")
-                    print("  /version - Show version")
-                    print("  /clear   - Reset session")
-                    print("  /exit    - Quit")
+                    print(get_help_text())
                     continue
 
                 # Unknown slash command

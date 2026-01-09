@@ -46,6 +46,7 @@ class LLMClient:
 
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
+        self.base_url = base_url
         self.temperature = temperature
         self.max_tokens = max_tokens
         self._context_limit = max_context_tokens  # User override
