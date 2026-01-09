@@ -170,6 +170,33 @@ Jetzt kannst du Fragen stellen:
 
 **Automatische Erkennung:** Der Agent erkennt automatisch, ob ICMP-Ping möglich ist. Falls nicht (Docker auf Windows/macOS), wird automatisch TCP-Connect Scan verwendet.
 
+## Aktualisieren
+
+Um auf die neueste Version zu aktualisieren:
+
+```bash
+# 1. Neuesten Code holen
+cd network-agent
+git pull
+
+# 2. Docker Image neu bauen (WICHTIG!)
+docker build -t network-agent:latest .
+
+# 3. Agent starten
+docker run -it --rm --network host --env-file .env network-agent:latest
+```
+
+**Wann neu bauen?**
+- Nach jedem `git pull` (Code-Änderungen)
+- Nach Änderungen an `requirements.txt`
+- Nach Änderungen am `Dockerfile`
+
+**Tipp:** Die Convenience Scripts (`start.sh`, `start.bat`) bauen das Image nur, wenn es noch nicht existiert. Nach Updates musst du `docker build` manuell ausführen oder das alte Image löschen:
+```bash
+docker rmi network-agent:latest
+./start.sh
+```
+
 ## Troubleshooting
 
 **"LLM_API_KEY environment variable not set"**
