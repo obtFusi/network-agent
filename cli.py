@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 
 def check_setup() -> tuple[bool, list[str]]:
@@ -133,11 +133,16 @@ def main():
                     print("[Session zurückgesetzt]")
                     continue
 
+                if cmd == "/version":
+                    print(f"Network Agent v{__version__}")
+                    continue
+
                 if cmd == "/help":
                     print("Commands:")
-                    print("  /help  - Show available commands")
-                    print("  /clear - Reset session")
-                    print("  /exit  - Quit")
+                    print("  /help    - Show available commands")
+                    print("  /version - Show version")
+                    print("  /clear   - Reset session")
+                    print("  /exit    - Quit")
                     continue
 
                 # Unknown slash command
