@@ -1,209 +1,251 @@
 """
 Tests for cli.py
 
-Tests CLI commands without requiring actual LLM connection.
+Tests CLI functions directly - no code copying!
+Uses real functions from cli.py and real tools from tools/.
 """
 
-from unittest.mock import MagicMock
-from io import StringIO
+from cli import truncate_description, get_help_text, get_tools_text, __version__
+from tools import get_all_tools
 
 
-class TestStatusCommand:
-    """Tests for /status command output."""
+class TestTruncateDescription:
+    """Tests for truncate_description() function."""
 
-    def test_status_output_format(self):
-        """Status command outputs correct format."""
-        # Create mock agent with test values
-        mock_agent = MagicMock()
-        mock_agent.context_limit = 131072
-        mock_agent.last_prompt_tokens = 2500
-        mock_agent.context_usage_percent = 1.9
-        mock_agent.total_tokens = 5000
-        mock_agent.truncation_count = 0
+    def test_empty_string(self):
+        """Empty input returns empty output."""
+        assert truncate_description("") == ""
 
-        # Capture output
-        output = StringIO()
+    def test_none_input(self):
+        """None input returns empty output."""
+        assert truncate_description(None) == ""
 
-        # Simulate /status command logic (from cli.py:138-148)
-        limit = mock_agent.context_limit
-        used = mock_agent.last_prompt_tokens
-        pct = mock_agent.context_usage_percent
-        total = mock_agent.total_tokens
-        truncations = mock_agent.truncation_count
+    def test_short_string_unchanged(self):
+        """Short string without period stays unchanged."""
+        assert truncate_description("Hello world") == "Hello world"
 
-        print("Session Status:", file=output)
-        print(f"  Context: {used:,}/{limit:,} tokens ({pct:.1f}%)", file=output)
-        print(f"  Session Tokens: {total:,}", file=output)
-        print(f"  Truncations: {truncations}", file=output)
+    def test_truncates_at_first_sentence(self):
+        """String is truncated at first sentence end."""
+        result = truncate_description("First sentence. Second sentence.")
+        assert result == "First sentence."
 
-        result = output.getvalue()
+    def test_long_string_truncated_with_ellipsis(self):
+        """Long string without period gets ellipsis."""
+        long_text = "A" * 100
+        result = truncate_description(long_text)
+        assert result == "A" * 57 + "..."
+        assert len(result) == 60
 
-        assert "Session Status:" in result
-        assert "2,500/131,072 tokens (1.9%)" in result
-        assert "Session Tokens: 5,000" in result
-        assert "Truncations: 0" in result
+    def test_custom_max_length(self):
+        """Custom max_length is respected."""
+        result = truncate_description("A" * 50, max_length=30)
+        assert result == "A" * 27 + "..."
+        assert len(result) == 30
 
-    def test_status_with_truncations(self):
-        """Status shows truncation count correctly."""
-        mock_agent = MagicMock()
-        mock_agent.context_limit = 8192
-        mock_agent.last_prompt_tokens = 7000
-        mock_agent.context_usage_percent = 85.4
-        mock_agent.total_tokens = 25000
-        mock_agent.truncation_count = 3
+    def test_sentence_takes_priority_over_length(self):
+        """First sentence is kept even if short."""
+        result = truncate_description("Hi. This is longer text here.")
+        assert result == "Hi."
 
-        output = StringIO()
-
-        limit = mock_agent.context_limit
-        used = mock_agent.last_prompt_tokens
-        pct = mock_agent.context_usage_percent
-        total = mock_agent.total_tokens
-        truncations = mock_agent.truncation_count
-
-        print("Session Status:", file=output)
-        print(f"  Context: {used:,}/{limit:,} tokens ({pct:.1f}%)", file=output)
-        print(f"  Session Tokens: {total:,}", file=output)
-        print(f"  Truncations: {truncations}", file=output)
-
-        result = output.getvalue()
-
-        assert "7,000/8,192 tokens (85.4%)" in result
-        assert "Session Tokens: 25,000" in result
-        assert "Truncations: 3" in result
+    def test_exact_max_length_no_truncation(self):
+        """String at exactly max_length stays unchanged."""
+        text = "A" * 60
+        result = truncate_description(text, max_length=60)
+        assert result == text
 
 
-class TestToolsCommand:
-    """Tests for /tools command output."""
+class TestGetHelpText:
+    """Golden tests for get_help_text() output."""
 
-    def test_tools_output_format(self):
-        """Tools command outputs correct format."""
-        # Create mock tools
-        mock_tool = MagicMock()
-        mock_tool.name = "ping_sweep"
-        mock_tool.description = (
-            "Scannt ein Netzwerk nach aktiven Hosts. Weitere Details."
-        )
+    def test_help_text_contains_all_commands(self):
+        """Help text includes all expected commands."""
+        help_text = get_help_text()
 
-        mock_agent = MagicMock()
-        mock_agent.tools = [mock_tool]
+        # All commands must be present
+        assert "/help" in help_text
+        assert "/tools" in help_text
+        assert "/config" in help_text
+        assert "/status" in help_text
+        assert "/version" in help_text
+        assert "/clear" in help_text
+        assert "/exit" in help_text
 
-        output = StringIO()
+    def test_help_text_starts_with_commands(self):
+        """Help text starts with 'Commands:' header."""
+        help_text = get_help_text()
+        assert help_text.startswith("Commands:")
 
-        # Simulate /tools command logic (from cli.py)
-        print("Available Tools:", file=output)
-        for tool in mock_agent.tools:
-            desc = tool.description
-            if ". " in desc:
-                desc = desc.split(". ")[0] + "."
-            elif len(desc) > 60:
-                desc = desc[:57] + "..."
-            print(f"  {tool.name} - {desc}", file=output)
+    def test_help_text_stable_format(self):
+        """Help text format is stable (golden test)."""
+        help_text = get_help_text()
 
-        result = output.getvalue()
+        # Exact expected output - if this fails, update intentionally
+        expected = """Commands:
+  /help    - Show available commands
+  /tools   - List available tools
+  /config  - Show LLM configuration
+  /status  - Show session statistics
+  /version - Show version
+  /clear   - Reset session
+  /exit    - Quit"""
 
-        assert "Available Tools:" in result
-        assert "ping_sweep" in result
-        # Description should be truncated to first sentence
-        assert "Scannt ein Netzwerk nach aktiven Hosts." in result
-        assert "Weitere Details" not in result
-
-    def test_tools_long_description_truncation(self):
-        """Long descriptions without periods are truncated with ellipsis."""
-        mock_tool = MagicMock()
-        mock_tool.name = "test_tool"
-        mock_tool.description = "A" * 100  # 100 chars, no period
-
-        mock_agent = MagicMock()
-        mock_agent.tools = [mock_tool]
-
-        output = StringIO()
-
-        print("Available Tools:", file=output)
-        for tool in mock_agent.tools:
-            desc = tool.description
-            if ". " in desc:
-                desc = desc.split(". ")[0] + "."
-            elif len(desc) > 60:
-                desc = desc[:57] + "..."
-            print(f"  {tool.name} - {desc}", file=output)
-
-        result = output.getvalue()
-
-        assert "test_tool" in result
-        assert "..." in result
-        # Should be truncated to 57 chars + "..."
-        assert len("A" * 57 + "...") == 60
-
-    def test_tools_multiple_tools(self):
-        """Multiple tools are listed."""
-        mock_tool1 = MagicMock()
-        mock_tool1.name = "tool_one"
-        mock_tool1.description = "First tool description."
-
-        mock_tool2 = MagicMock()
-        mock_tool2.name = "tool_two"
-        mock_tool2.description = "Second tool description."
-
-        mock_agent = MagicMock()
-        mock_agent.tools = [mock_tool1, mock_tool2]
-
-        output = StringIO()
-
-        print("Available Tools:", file=output)
-        for tool in mock_agent.tools:
-            desc = tool.description
-            if ". " in desc:
-                desc = desc.split(". ")[0] + "."
-            elif len(desc) > 60:
-                desc = desc[:57] + "..."
-            print(f"  {tool.name} - {desc}", file=output)
-
-        result = output.getvalue()
-
-        assert "tool_one" in result
-        assert "tool_two" in result
+        assert help_text == expected
 
 
-class TestHelpCommand:
-    """Tests for /help command."""
+class TestGetToolsText:
+    """Tests for get_tools_text() - tests REAL tools!"""
 
-    def test_help_includes_all_commands(self):
-        """Help command lists all commands including /tools."""
-        output = StringIO()
+    def test_tools_text_starts_with_header(self):
+        """Tools text starts with 'Available Tools:' header."""
+        tools_text = get_tools_text()
+        assert tools_text.startswith("Available Tools:")
 
-        # Simulate /help output (from cli.py)
-        print("Commands:", file=output)
-        print("  /help    - Show available commands", file=output)
-        print("  /tools   - List available tools", file=output)
-        print("  /status  - Show session statistics", file=output)
-        print("  /version - Show version", file=output)
-        print("  /clear   - Reset session", file=output)
-        print("  /exit    - Quit", file=output)
+    def test_tools_text_contains_ping_sweep(self):
+        """Tools text contains ping_sweep tool."""
+        tools_text = get_tools_text()
+        assert "ping_sweep" in tools_text
 
-        result = output.getvalue()
+    def test_tools_text_has_descriptions(self):
+        """Each tool line has a description after the dash."""
+        tools_text = get_tools_text()
+        lines = tools_text.split("\n")
 
-        assert "/status" in result
-        assert "/help" in result
-        assert "/tools" in result
-        assert "/version" in result
-        assert "/clear" in result
-        assert "/exit" in result
+        # Skip header line
+        tool_lines = [line for line in lines[1:] if line.strip()]
+
+        for line in tool_lines:
+            assert " - " in line, f"Tool line missing description separator: {line}"
+
+    def test_tools_text_matches_registry(self):
+        """Tools text contains all tools from registry."""
+        tools_text = get_tools_text()
+        tools = get_all_tools()
+
+        for tool in tools:
+            assert tool.name in tools_text, f"Tool {tool.name} not in output"
 
 
-class TestVersionImport:
+class TestGetAllToolsContract:
+    """Contract tests for get_all_tools() registry."""
+
+    def test_returns_list(self):
+        """Registry returns a list."""
+        tools = get_all_tools()
+        assert isinstance(tools, list)
+
+    def test_not_empty(self):
+        """Registry is not empty."""
+        tools = get_all_tools()
+        assert len(tools) > 0
+
+    def test_all_tools_have_name(self):
+        """All tools have a non-empty name."""
+        tools = get_all_tools()
+        for tool in tools:
+            assert hasattr(tool, "name"), "Tool missing 'name' attribute"
+            assert tool.name, "Tool has empty name"
+            assert isinstance(tool.name, str), f"Tool name is not string: {tool.name}"
+
+    def test_all_tools_have_description(self):
+        """All tools have a non-empty description."""
+        tools = get_all_tools()
+        for tool in tools:
+            assert hasattr(tool, "description"), (
+                f"Tool {tool.name} missing 'description'"
+            )
+            assert tool.description, f"Tool {tool.name} has empty description"
+            assert isinstance(tool.description, str), (
+                f"Tool {tool.name} description is not string"
+            )
+
+    def test_all_tools_have_parameters(self):
+        """All tools have a parameters schema."""
+        tools = get_all_tools()
+        for tool in tools:
+            assert hasattr(tool, "parameters"), f"Tool {tool.name} missing 'parameters'"
+            assert isinstance(tool.parameters, dict), (
+                f"Tool {tool.name} parameters is not dict"
+            )
+
+    def test_all_tools_have_execute(self):
+        """All tools have an execute method."""
+        tools = get_all_tools()
+        for tool in tools:
+            assert hasattr(tool, "execute"), (
+                f"Tool {tool.name} missing 'execute' method"
+            )
+            assert callable(tool.execute), f"Tool {tool.name} execute is not callable"
+
+    def test_no_duplicate_names(self):
+        """All tool names are unique."""
+        tools = get_all_tools()
+        names = [tool.name for tool in tools]
+        assert len(names) == len(set(names)), f"Duplicate tool names: {names}"
+
+
+class TestVersion:
     """Tests for version consistency."""
 
     def test_version_is_string(self):
         """Version is a valid string."""
-        from cli import __version__
-
         assert isinstance(__version__, str)
         assert len(__version__) > 0
 
     def test_version_format(self):
-        """Version follows semver format."""
-        from cli import __version__
-
+        """Version follows semver format (X.Y.Z)."""
         parts = __version__.split(".")
-        assert len(parts) == 3
-        assert all(part.isdigit() for part in parts)
+        assert len(parts) == 3, f"Version {__version__} is not semver"
+        assert all(part.isdigit() for part in parts), (
+            f"Version {__version__} has non-numeric parts"
+        )
+
+
+class TestCLIArguments:
+    """Integration tests for CLI arguments."""
+
+    def test_help_commands_argument(self):
+        """--help-commands outputs help text and exits."""
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [sys.executable, "cli.py", "--help-commands"],
+            capture_output=True,
+            text=True,
+            cwd="/work/network-agent",
+        )
+
+        assert result.returncode == 0
+        assert "Commands:" in result.stdout
+        assert "/help" in result.stdout
+
+    def test_list_tools_argument(self):
+        """--list-tools outputs tools and exits."""
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [sys.executable, "cli.py", "--list-tools"],
+            capture_output=True,
+            text=True,
+            cwd="/work/network-agent",
+        )
+
+        assert result.returncode == 0
+        assert "Available Tools:" in result.stdout
+        assert "ping_sweep" in result.stdout
+
+    def test_version_argument(self):
+        """--version outputs version and exits."""
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [sys.executable, "cli.py", "--version"],
+            capture_output=True,
+            text=True,
+            cwd="/work/network-agent",
+        )
+
+        assert result.returncode == 0
+        assert __version__ in result.stdout
