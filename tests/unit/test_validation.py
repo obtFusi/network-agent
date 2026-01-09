@@ -5,7 +5,6 @@ Tests input validation and sanitization functions.
 Uses RFC 5737 TEST-NET addresses (192.0.2.0/24) for examples.
 """
 
-import pytest
 from tools.validation import validate_network, validate_port_list, sanitize_hostname
 
 
