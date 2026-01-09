@@ -26,15 +26,15 @@ class PingSweepTool(BaseTool):
             "properties": {
                 "network": {
                     "type": "string",
-                    "description": "Netzwerk in CIDR-Notation, z.B. 192.168.1.0/24"
+                    "description": "Netzwerk in CIDR-Notation, z.B. 192.168.1.0/24",
                 },
                 "method": {
                     "type": "string",
                     "enum": ["auto", "icmp", "tcp"],
-                    "description": "Scan-Methode: auto (erkennt automatisch), icmp (Ping), tcp (Port-Scan)"
-                }
+                    "description": "Scan-Methode: auto (erkennt automatisch), icmp (Ping), tcp (Port-Scan)",
+                },
             },
-            "required": ["network"]
+            "required": ["network"],
         }
 
     def _has_raw_socket_access(self) -> bool:
@@ -45,7 +45,7 @@ class PingSweepTool(BaseTool):
                 ["nmap", "-sn", "-n", "127.0.0.1"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
             )
             # Wenn "Host is up" gefunden wird, funktioniert ICMP
             return "Host is up" in result.stdout
@@ -56,9 +56,7 @@ class PingSweepTool(BaseTool):
         """Führt Netzwerk-Scan aus"""
         # === VALIDIERUNG (Guardrails) ===
         valid, error, normalized_network = validate_network(
-            network,
-            max_hosts=self.MAX_HOSTS,
-            allow_public=self.ALLOW_PUBLIC
+            network, max_hosts=self.MAX_HOSTS, allow_public=self.ALLOW_PUBLIC
         )
         if not valid:
             return f"Validierungsfehler: {error}"
@@ -88,7 +86,7 @@ class PingSweepTool(BaseTool):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=60  # TCP-Scan braucht länger
+                timeout=60,  # TCP-Scan braucht länger
             )
 
             if result.returncode == 0:

@@ -1,0 +1,7 @@
+# Nmap 7.94 scan initiated Thu Jan 09 10:00:00 2026 as: nmap -sn -oG - 192.0.2.0/28
+Host: 192.0.2.1 ()	Status: Up
+Host: 192.0.2.2 ()	Status: Up
+Host: 192.0.2.5 ()	Status: Up
+Host: 192.0.2.10 ()	Status: Up
+Host: 192.0.2.14 ()	Status: Up
+# Nmap done at Thu Jan 09 10:00:05 2026 -- 16 IP addresses (5 hosts up) scanned in 5.00 seconds
