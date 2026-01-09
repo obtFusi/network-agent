@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 
 def check_setup() -> tuple[bool, list[str]]:
@@ -135,9 +135,22 @@ def main():
                     print(f"Network Agent v{__version__}")
                     continue
 
+                if cmd == "/status":
+                    limit = agent.context_limit
+                    used = agent.last_prompt_tokens
+                    pct = agent.context_usage_percent
+                    total = agent.total_tokens
+                    truncations = agent.truncation_count
+                    print("Session Status:")
+                    print(f"  Context: {used:,}/{limit:,} tokens ({pct:.1f}%)")
+                    print(f"  Session Tokens: {total:,}")
+                    print(f"  Truncations: {truncations}")
+                    continue
+
                 if cmd == "/help":
                     print("Commands:")
                     print("  /help    - Show available commands")
+                    print("  /status  - Show session statistics")
                     print("  /version - Show version")
                     print("  /clear   - Reset session")
                     print("  /exit    - Quit")
