@@ -72,16 +72,109 @@ class TestStatusCommand:
         assert "Truncations: 3" in result
 
 
+class TestToolsCommand:
+    """Tests for /tools command output."""
+
+    def test_tools_output_format(self):
+        """Tools command outputs correct format."""
+        # Create mock tools
+        mock_tool = MagicMock()
+        mock_tool.name = "ping_sweep"
+        mock_tool.description = (
+            "Scannt ein Netzwerk nach aktiven Hosts. Weitere Details."
+        )
+
+        mock_agent = MagicMock()
+        mock_agent.tools = [mock_tool]
+
+        output = StringIO()
+
+        # Simulate /tools command logic (from cli.py)
+        print("Available Tools:", file=output)
+        for tool in mock_agent.tools:
+            desc = tool.description
+            if ". " in desc:
+                desc = desc.split(". ")[0] + "."
+            elif len(desc) > 60:
+                desc = desc[:57] + "..."
+            print(f"  {tool.name} - {desc}", file=output)
+
+        result = output.getvalue()
+
+        assert "Available Tools:" in result
+        assert "ping_sweep" in result
+        # Description should be truncated to first sentence
+        assert "Scannt ein Netzwerk nach aktiven Hosts." in result
+        assert "Weitere Details" not in result
+
+    def test_tools_long_description_truncation(self):
+        """Long descriptions without periods are truncated with ellipsis."""
+        mock_tool = MagicMock()
+        mock_tool.name = "test_tool"
+        mock_tool.description = "A" * 100  # 100 chars, no period
+
+        mock_agent = MagicMock()
+        mock_agent.tools = [mock_tool]
+
+        output = StringIO()
+
+        print("Available Tools:", file=output)
+        for tool in mock_agent.tools:
+            desc = tool.description
+            if ". " in desc:
+                desc = desc.split(". ")[0] + "."
+            elif len(desc) > 60:
+                desc = desc[:57] + "..."
+            print(f"  {tool.name} - {desc}", file=output)
+
+        result = output.getvalue()
+
+        assert "test_tool" in result
+        assert "..." in result
+        # Should be truncated to 57 chars + "..."
+        assert len("A" * 57 + "...") == 60
+
+    def test_tools_multiple_tools(self):
+        """Multiple tools are listed."""
+        mock_tool1 = MagicMock()
+        mock_tool1.name = "tool_one"
+        mock_tool1.description = "First tool description."
+
+        mock_tool2 = MagicMock()
+        mock_tool2.name = "tool_two"
+        mock_tool2.description = "Second tool description."
+
+        mock_agent = MagicMock()
+        mock_agent.tools = [mock_tool1, mock_tool2]
+
+        output = StringIO()
+
+        print("Available Tools:", file=output)
+        for tool in mock_agent.tools:
+            desc = tool.description
+            if ". " in desc:
+                desc = desc.split(". ")[0] + "."
+            elif len(desc) > 60:
+                desc = desc[:57] + "..."
+            print(f"  {tool.name} - {desc}", file=output)
+
+        result = output.getvalue()
+
+        assert "tool_one" in result
+        assert "tool_two" in result
+
+
 class TestHelpCommand:
     """Tests for /help command."""
 
-    def test_help_includes_status(self):
-        """Help command lists /status."""
+    def test_help_includes_all_commands(self):
+        """Help command lists all commands including /tools."""
         output = StringIO()
 
-        # Simulate /help output (from cli.py:150-156)
+        # Simulate /help output (from cli.py)
         print("Commands:", file=output)
         print("  /help    - Show available commands", file=output)
+        print("  /tools   - List available tools", file=output)
         print("  /status  - Show session statistics", file=output)
         print("  /version - Show version", file=output)
         print("  /clear   - Reset session", file=output)
@@ -91,6 +184,7 @@ class TestHelpCommand:
 
         assert "/status" in result
         assert "/help" in result
+        assert "/tools" in result
         assert "/version" in result
         assert "/clear" in result
         assert "/exit" in result

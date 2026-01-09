@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 
 
 def check_setup() -> tuple[bool, list[str]]:
@@ -147,9 +147,22 @@ def main():
                     print(f"  Truncations: {truncations}")
                     continue
 
+                if cmd == "/tools":
+                    print("Available Tools:")
+                    for tool in agent.tools:
+                        # Truncate description to first sentence or 60 chars
+                        desc = tool.description
+                        if ". " in desc:
+                            desc = desc.split(". ")[0] + "."
+                        elif len(desc) > 60:
+                            desc = desc[:57] + "..."
+                        print(f"  {tool.name} - {desc}")
+                    continue
+
                 if cmd == "/help":
                     print("Commands:")
                     print("  /help    - Show available commands")
+                    print("  /tools   - List available tools")
                     print("  /status  - Show session statistics")
                     print("  /version - Show version")
                     print("  /clear   - Reset session")
