@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](CHANGELOG.md)
 
 Ein KI-gesteuerter Netzwerk-Scanner. Statt komplizierte Terminal-Befehle zu lernen, stellst du einfach Fragen wie *"Welche Geräte sind in meinem Netzwerk?"* - der Agent erledigt den Rest.
 
@@ -143,7 +143,7 @@ Nach dem Start siehst du:
 ```
 Network Agent startet...
    Model: gpt-4
-   Type 'exit' to stop, 'clear' to reset session
+   Type /help for available commands
 
    Context-Limit: 8,192 tokens
 
@@ -156,8 +156,9 @@ Jetzt kannst du Fragen stellen:
 - `Wer ist online im Subnetz 192.168.178.0/24?`
 
 **Commands:**
-- `clear` / `reset` - Session-Speicher löschen
-- `exit` / `quit` - Beenden
+- `/help` - Verfügbare Befehle anzeigen
+- `/clear` - Session-Speicher löschen
+- `/exit` - Beenden
 
 ## Plattform-Kompatibilität
 
