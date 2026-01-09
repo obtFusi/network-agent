@@ -104,30 +104,47 @@ def main():
     # Initialize agent
     print("Network Agent startet...")
     print(f"   Model: {config['llm']['provider']['model']}")
-    print("   Type 'exit' to stop, 'clear' to reset session\n")
 
     agent = NetworkAgent(config, system_prompt)
 
     # Context-Limit anzeigen
     print(f"   Context-Limit: {agent.context_limit:,} tokens")
+    print("   Type /help for available commands\n")
 
     # REPL Loop
     while True:
         try:
             user_input = input("\n> ")
 
-            if user_input.lower() in ["exit", "quit", "q"]:
-                print("Bye!")
-                break
-
-            if user_input.lower() in ["clear", "reset"]:
-                agent.clear_session()
-                print("[Session zurückgesetzt]")
-                continue
-
+            # Empty input
             if not user_input.strip():
                 continue
 
+            # Slash commands
+            if user_input.startswith("/"):
+                cmd = user_input.lower().strip()
+
+                if cmd == "/exit":
+                    print("Bye!")
+                    break
+
+                if cmd == "/clear":
+                    agent.clear_session()
+                    print("[Session zurückgesetzt]")
+                    continue
+
+                if cmd == "/help":
+                    print("Commands:")
+                    print("  /help  - Show available commands")
+                    print("  /clear - Reset session")
+                    print("  /exit  - Quit")
+                    continue
+
+                # Unknown slash command
+                print(f"Unknown command: {user_input.split()[0]} (try /help)")
+                continue
+
+            # Normal text -> send to LLM
             response = agent.run(user_input)
             print(f"\n{response}")
 
