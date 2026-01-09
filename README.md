@@ -157,6 +157,7 @@ Jetzt kannst du Fragen stellen:
 
 **Commands:**
 - `/help` - Verfügbare Befehle anzeigen
+- `/version` - Version anzeigen
 - `/clear` - Session-Speicher löschen
 - `/exit` - Beenden
 
