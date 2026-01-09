@@ -207,12 +207,14 @@ class TestCLIArguments:
         """--help-commands outputs help text and exits."""
         import subprocess
         import sys
+        from pathlib import Path
 
+        project_root = Path(__file__).parent.parent.parent
         result = subprocess.run(
             [sys.executable, "cli.py", "--help-commands"],
             capture_output=True,
             text=True,
-            cwd="/work/network-agent",
+            cwd=project_root,
         )
 
         assert result.returncode == 0
@@ -223,12 +225,14 @@ class TestCLIArguments:
         """--list-tools outputs tools and exits."""
         import subprocess
         import sys
+        from pathlib import Path
 
+        project_root = Path(__file__).parent.parent.parent
         result = subprocess.run(
             [sys.executable, "cli.py", "--list-tools"],
             capture_output=True,
             text=True,
-            cwd="/work/network-agent",
+            cwd=project_root,
         )
 
         assert result.returncode == 0
@@ -239,12 +243,14 @@ class TestCLIArguments:
         """--version outputs version and exits."""
         import subprocess
         import sys
+        from pathlib import Path
 
+        project_root = Path(__file__).parent.parent.parent
         result = subprocess.run(
             [sys.executable, "cli.py", "--version"],
             capture_output=True,
             text=True,
-            cwd="/work/network-agent",
+            cwd=project_root,
         )
 
         assert result.returncode == 0
