@@ -54,16 +54,16 @@ def show_setup_guide(missing: list[str]):
     print("2. Provider konfigurieren (config/settings.yaml):")
     print()
     print("   Für OpenAI:")
-    print("     model: \"gpt-4\"")
-    print("     base_url: \"https://api.openai.com/v1\"")
+    print('     model: "gpt-4"')
+    print('     base_url: "https://api.openai.com/v1"')
     print()
     print("   Für Groq (kostenlos):")
-    print("     model: \"llama-3.3-70b-versatile\"")
-    print("     base_url: \"https://api.groq.com/openai/v1\"")
+    print('     model: "llama-3.3-70b-versatile"')
+    print('     base_url: "https://api.groq.com/openai/v1"')
     print()
     print("   Für Ollama (lokal):")
-    print("     model: \"llama3\"")
-    print("     base_url: \"http://localhost:11434/v1\"")
+    print('     model: "llama3"')
+    print('     base_url: "http://localhost:11434/v1"')
     print()
     print("Mehr Provider: siehe README.md")
     print("=" * 60)
@@ -75,9 +75,7 @@ def main():
         description="Network Agent - KI-gesteuerter Netzwerk-Scanner"
     )
     parser.add_argument(
-        "--version", "-v",
-        action="version",
-        version=f"Network Agent v{__version__}"
+        "--version", "-v", action="version", version=f"Network Agent v{__version__}"
     )
     parser.parse_args()
 

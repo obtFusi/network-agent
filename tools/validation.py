@@ -11,14 +11,12 @@ from typing import Tuple
 
 # Standard-Limits
 DEFAULT_MAX_HOSTS = 65536  # /16 Netzwerk
-DANGEROUS_CHARS = re.compile(r'[;&|`$(){}\\<>\n\r]')
-NMAP_OPTION_PATTERN = re.compile(r'^-')
+DANGEROUS_CHARS = re.compile(r"[;&|`$(){}\\<>\n\r]")
+NMAP_OPTION_PATTERN = re.compile(r"^-")
 
 
 def validate_network(
-    network: str,
-    max_hosts: int = DEFAULT_MAX_HOSTS,
-    allow_public: bool = True
+    network: str, max_hosts: int = DEFAULT_MAX_HOSTS, allow_public: bool = True
 ) -> Tuple[bool, str, str]:
     """
     Validiert Netzwerk-Input für Scan-Tools.
@@ -49,7 +47,7 @@ def validate_network(
         return False, "Input darf nicht mit '-' beginnen (keine nmap-Optionen)", ""
 
     # 3. Keine Leerzeichen (könnten zusätzliche Argumente sein)
-    if ' ' in network or '\t' in network:
+    if " " in network or "\t" in network:
         return False, "Input darf keine Leerzeichen enthalten", ""
 
     # 4. CIDR-Parsing mit Python's ipaddress Modul
@@ -66,7 +64,7 @@ def validate_network(
             False,
             f"Netzwerk zu groß: {num_hosts:,} Hosts (Maximum: {max_hosts:,}). "
             f"Verwende ein kleineres Subnetz, z.B. /{net.prefixlen + 4}",
-            ""
+            "",
         )
 
     # 6. Private IP Check (optional)
@@ -74,7 +72,7 @@ def validate_network(
         return (
             False,
             f"Nur private Netzwerke erlaubt. {net} ist ein öffentliches Netzwerk.",
-            ""
+            "",
         )
 
     # 7. Spezielle Netzwerke warnen/blocken
@@ -111,19 +109,27 @@ def validate_port_list(ports: str) -> Tuple[bool, str, str]:
         return False, "Ungültige Zeichen in Port-Liste", ""
 
     # Nur erlaubte Zeichen: Ziffern, Komma, Bindestrich
-    if not re.match(r'^[\d,\-]+$', ports):
-        return False, "Port-Liste darf nur Ziffern, Kommas und Bindestriche enthalten", ""
+    if not re.match(r"^[\d,\-]+$", ports):
+        return (
+            False,
+            "Port-Liste darf nur Ziffern, Kommas und Bindestriche enthalten",
+            "",
+        )
 
     # Einzelne Ports/Ranges validieren
-    for part in ports.split(','):
+    for part in ports.split(","):
         part = part.strip()
-        if '-' in part:
+        if "-" in part:
             # Range: "1-1024"
             try:
-                start, end = part.split('-')
+                start, end = part.split("-")
                 start, end = int(start), int(end)
                 if not (1 <= start <= 65535 and 1 <= end <= 65535):
-                    return False, f"Port außerhalb des gültigen Bereichs (1-65535): {part}", ""
+                    return (
+                        False,
+                        f"Port außerhalb des gültigen Bereichs (1-65535): {part}",
+                        "",
+                    )
                 if start > end:
                     return False, f"Ungültige Port-Range: {part}", ""
             except ValueError:
@@ -133,7 +139,11 @@ def validate_port_list(ports: str) -> Tuple[bool, str, str]:
             try:
                 port = int(part)
                 if not 1 <= port <= 65535:
-                    return False, f"Port außerhalb des gültigen Bereichs (1-65535): {port}", ""
+                    return (
+                        False,
+                        f"Port außerhalb des gültigen Bereichs (1-65535): {port}",
+                        "",
+                    )
             except ValueError:
                 return False, f"Ungültiger Port: {part}", ""
 
@@ -160,7 +170,7 @@ def sanitize_hostname(hostname: str) -> Tuple[bool, str, str]:
         return False, "Ungültige Zeichen im Hostname", ""
 
     # Keine Leerzeichen
-    if ' ' in hostname or '\t' in hostname:
+    if " " in hostname or "\t" in hostname:
         return False, "Hostname darf keine Leerzeichen enthalten", ""
 
     # Versuche als IP zu parsen
@@ -175,7 +185,7 @@ def sanitize_hostname(hostname: str) -> Tuple[bool, str, str]:
         return False, "Hostname zu lang (max 253 Zeichen)", ""
 
     # Erlaubte Zeichen: a-z, 0-9, Bindestrich, Punkt
-    if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$', hostname):
+    if not re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$", hostname):
         return False, "Ungültiger Hostname", ""
 
     return True, "", hostname.lower()

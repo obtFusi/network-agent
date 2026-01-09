@@ -17,7 +17,7 @@ class NetworkAgent:
             base_url=llm_config["base_url"],
             temperature=llm_config["temperature"],
             max_tokens=llm_config["max_tokens"],
-            max_context_tokens=llm_config.get("max_context_tokens")
+            max_context_tokens=llm_config.get("max_context_tokens"),
         )
 
         self.tools = get_all_tools()
@@ -53,9 +53,7 @@ class NetworkAgent:
 
     def clear_session(self) -> None:
         """Setzt Session zurück (behält nur System-Prompt)"""
-        self.messages = [
-            {"role": "system", "content": self.system_prompt}
-        ]
+        self.messages = [{"role": "system", "content": self.system_prompt}]
         self.total_tokens = 0
         self.last_usage = None
         self.last_prompt_tokens = 0
@@ -125,7 +123,7 @@ class NetworkAgent:
             message = response.choices[0].message
 
             # Token usage tracken
-            if hasattr(response, 'usage') and response.usage:
+            if hasattr(response, "usage") and response.usage:
                 self.last_usage = response.usage
                 self.last_prompt_tokens = response.usage.prompt_tokens
                 self.total_tokens += response.usage.total_tokens
@@ -133,28 +131,27 @@ class NetworkAgent:
             # Keine Tool-Calls? → Fertig
             if not message.tool_calls:
                 # Assistant-Antwort zur Session hinzufügen
-                self.messages.append({
-                    "role": "assistant",
-                    "content": message.content
-                })
+                self.messages.append({"role": "assistant", "content": message.content})
                 return message.content
 
             # Tool-Calls vorhanden - Message zur Session hinzufügen
-            self.messages.append({
-                "role": "assistant",
-                "content": message.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
+            self.messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
                         }
-                    }
-                    for tc in message.tool_calls
-                ]
-            })
+                        for tc in message.tool_calls
+                    ],
+                }
+            )
 
             for tool_call in message.tool_calls:
                 tool_name = tool_call.function.name
@@ -173,10 +170,8 @@ class NetworkAgent:
                     print(f"  Result: {result[:100]}...")
 
                 # Tool-Result zur Session hinzufügen
-                self.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result
-                })
+                self.messages.append(
+                    {"role": "tool", "tool_call_id": tool_call.id, "content": result}
+                )
 
         return "Error: Max iterations reached"
