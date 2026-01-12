@@ -1,9 +1,10 @@
 from tools.network.ping_sweep import PingSweepTool
+from tools.network.dns_lookup import DNSLookupTool
 
 
 def get_all_tools():
     """Registry: Alle verfügbaren Tools"""
     return [
         PingSweepTool(),
-        # Neue Tools hier hinzufügen
+        DNSLookupTool(),
     ]
