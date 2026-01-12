@@ -1,9 +1,36 @@
+# Docker Compose for Network Agent with SearXNG
+# Linux version: Uses host network for LAN scanning capabilities
+#
+# Usage: docker compose up
+#
+# For macOS/Windows, use: docker compose -f docker-compose.macos.yml up
+
 services:
-  network-agent:
+  agent:
     build: .
     image: network-agent:latest
-    network_mode: host  # Für LAN-Zugriff (nur Linux/WSL2)
+    stdin_open: true      # Required for interactive CLI (-i)
+    tty: true             # Required for interactive CLI (-t)
+    environment:
+      - SEARXNG_URL=http://localhost:8180  # Host network: access via localhost
     env_file:
-      - .env
-    stdin_open: true    # -i
-    tty: true           # -t
+      - .env              # LLM_API_KEY and other settings
+    network_mode: "host"  # Required for LAN scans (Linux only!)
+    depends_on:
+      searxng:
+        condition: service_healthy
+
+  searxng:
+    image: searxng/searxng:latest
+    network_mode: "host"  # Must match agent for localhost communication
+    environment:
+      - GRANIAN_PORT=8180         # Port for SearXNG (granian server)
+      - GRANIAN_HOST=0.0.0.0      # Bind to all interfaces
+      - SEARXNG_SECRET=network-agent-searxng-dev-key-2026  # Dev-only secret
+    volumes:
+      - ./searxng:/etc/searxng  # Not read-only - SearXNG needs to write secret_key
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8180/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

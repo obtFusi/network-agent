@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](CHANGELOG.md)
 
 Ein KI-gesteuerter Netzwerk-Scanner. Statt komplizierte Terminal-Befehle zu lernen, stellst du einfach Fragen wie *"Welche Geräte sind in meinem Netzwerk?"* - der Agent erledigt den Rest.
 
@@ -169,21 +169,30 @@ docker build -t network-agent:latest .
 
 ### 4. Agent starten
 
-**Linux:**
+**Mit Web-Suche (empfohlen):**
+
 ```bash
-docker run -it --rm --network host --env-file .env network-agent:latest
+# Linux (LAN-Scans + Web-Suche):
+docker compose up
+
+# macOS/Windows (Web-Suche, eingeschränkte Netzwerk-Scans):
+docker compose -f docker-compose.macos.yml up
 ```
 
-**Windows mit WSL2:**
-```bash
-docker run -it --rm --network host --env-file .env network-agent:latest
-```
+**Ohne Web-Suche (wie bisher):**
 
-**Windows ohne WSL / macOS:**
 ```bash
+# Linux:
+docker run -it --rm --network host --env-file .env network-agent:latest
+
+# Windows mit WSL2:
+docker run -it --rm --network host --env-file .env network-agent:latest
+
+# Windows ohne WSL / macOS:
 docker run -it --rm --env-file .env network-agent:latest
 ```
-*Hinweis: Ohne `--network host` ist der Scan auf das Docker-interne Netzwerk beschränkt.*
+
+> **Hinweis:** Docker Compose startet automatisch SearXNG für Web-Suchen. Ohne `--network host` ist der LAN-Scan eingeschränkt.
 
 ## Verwendung
 
@@ -239,6 +248,16 @@ Network Agent starting...
 > - Langsamer als Port-Scan, dafür mehr Details
 > - "Gründlich" oder "intensiv" für bessere Erkennung, "schnell" für oberflächlich
 > - Ohne Port-Angabe werden die 20 häufigsten Ports geprüft
+
+**Web-Suche (nur mit Docker Compose):**
+- `Suche nach nmap scripting Dokumentation`
+- `Was ist SearXNG?`
+- `Finde Tutorials zu Python Netzwerk-Programmierung`
+
+> **Gut zu wissen:**
+> - Web-Suche funktioniert nur mit Docker Compose (`docker compose up`)
+> - Alle Suchanfragen bleiben lokal (kein externer API-Key nötig)
+> - Kategorien verfügbar: general, images, news, science, it, files
 
 **Folgefragen stellen:**
 - `Welche davon haben offene Ports?`
@@ -455,12 +474,21 @@ network-agent/
 │   ├── base.py         # Tool-Basisklasse
 │   ├── config.py       # Scan-Konfiguration (Singleton)
 │   ├── validation.py   # Input-Validierung
-│   └── network/
-│       └── ping_sweep.py   # nmap Ping-Sweep
+│   ├── network/        # Netzwerk-Tools
+│   │   ├── ping_sweep.py
+│   │   ├── dns_lookup.py
+│   │   ├── port_scanner.py
+│   │   └── service_detect.py
+│   └── web/            # Web-Tools
+│       └── web_search.py   # SearXNG Web-Suche
 ├── config/
 │   ├── settings.yaml   # Provider & Scan Konfiguration
 │   └── prompts/
 │       └── system.md   # System-Prompt für KI
+├── searxng/            # SearXNG Konfiguration
+│   └── settings.yml    # Suchmaschinen-Konfiguration
+├── docker-compose.yml  # Linux (mit Host-Network)
+├── docker-compose.macos.yml  # macOS/Windows (mit Bridge-Network)
 ├── Dockerfile          # Container-Definition
 ├── requirements.txt    # Python-Abhängigkeiten
 └── .env.example        # API-Key Vorlage

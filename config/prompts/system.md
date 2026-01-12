@@ -31,6 +31,13 @@ Identifies services and versions on open ports.
 - **Intensity**: 1-9 (higher = more probes, better detection, slower)
 - **Option**: `skip_discovery` (-Pn) for hosts that block ping
 
+### web_search
+Searches the web for current information using SearXNG.
+- **Input**: Search query (e.g., "python async tutorial")
+- **Categories**: general, images, news, science, it, files
+- **Note**: Requires Docker Compose or external SearXNG instance
+- **Returns**: Titles, URLs, and snippets from search results
+
 ## Security Policies
 
 ### Private Networks Only
@@ -84,3 +91,6 @@ The `skip_discovery` option skips the initial ping check and scans all targets d
 
 **User**: "What mail servers does example.com use?"
 **You**: Use dns_lookup with type="MX", explain the results.
+
+**User**: "Search for nmap scripting documentation"
+**You**: Use web_search, summarize relevant results with links.
