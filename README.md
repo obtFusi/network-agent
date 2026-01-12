@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)](CHANGELOG.md)
 
 Ein KI-gesteuerter Netzwerk-Scanner. Statt komplizierte Terminal-Befehle zu lernen, stellst du einfach Fragen wie *"Welche Geräte sind in meinem Netzwerk?"* - der Agent erledigt den Rest.
 
@@ -217,6 +217,18 @@ Network Agent startet...
 > - Du kannst einzelne Ports (`22,80,443`) oder Bereiche (`1-1000`) angeben
 > - "Schnell" oder "langsam" steuert die Scan-Geschwindigkeit
 > - Manche Geräte antworten nicht auf Ping - sag dann "auch wenn kein Ping"
+
+**Service-Erkennung:**
+- `Welche Services laufen auf 192.168.1.1?`
+- `Erkenne die Versionen auf dem Router`
+- `Was für ein Webserver läuft auf 192.168.1.10:80?`
+- `Gründliche Service-Erkennung auf 192.168.1.5` *(mit hoher Intensität)*
+
+> **Gut zu wissen:**
+> - Erkennt Service-Namen und Versionen (z.B. "OpenSSH 8.9", "Apache 2.4")
+> - Langsamer als Port-Scan, dafür mehr Details
+> - "Gründlich" oder "intensiv" für bessere Erkennung, "schnell" für oberflächlich
+> - Ohne Port-Angabe werden die 20 häufigsten Ports geprüft
 
 **Folgefragen stellen:**
 - `Welche davon haben offene Ports?`
