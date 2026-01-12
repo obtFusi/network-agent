@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-01-12
+
+### Changed
+- **English Messages**: All CLI messages, docstrings, and system prompt switched to English (#27)
+- **Breaking Change**: Users wanting German responses should add `Always respond in German.` to system.md
+
+### Added
+- **Technical Documentation**: README now includes host limits, port defaults, IPv6 status
+- **DNS Exception**: Documented that dns_lookup can query public domains
+- **skip_discovery Guide**: Documented when to use -Pn flag and its risks
+
 ## [0.6.0] - 2026-01-12
 
 ### Added
