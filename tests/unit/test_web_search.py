@@ -84,7 +84,7 @@ class TestWebSearchTool:
         result = tool.execute(query="test query")
         assert "Web Search" in result
         assert "Test Result 1" in result
-        assert "example.com" in result
+        assert "https://example.com/1" in result
 
     def test_empty_results(self, mock_searxng_url, mock_requests_get):
         """Test empty results returns appropriate message."""
