@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
 
 Ein KI-gesteuerter Netzwerk-Scanner. Statt komplizierte Terminal-Befehle zu lernen, stellst du einfach Fragen wie *"Welche Geräte sind in meinem Netzwerk?"* - der Agent erledigt den Rest.
 
@@ -200,6 +200,12 @@ Network Agent startet...
 - `Zeig mir die MX-Records von gmail.com`
 - `Reverse DNS für 8.8.8.8`
 - `Welcher Nameserver ist für heise.de zuständig?`
+
+**Port-Scans:**
+- `Scanne die Ports 22, 80, 443 auf 192.168.1.1`
+- `Welche Ports sind auf dem Router offen?`
+- `Prüfe Ports 1-1000 auf 192.168.1.10`
+- `Schneller Portscan auf 192.168.1.0/24` *(mit T4 Timing)*
 
 **Folgefragen stellen:**
 - `Welche davon haben offene Ports?`
