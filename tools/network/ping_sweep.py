@@ -1,15 +1,17 @@
 import subprocess
 from tools.base import BaseTool
-from tools.validation import validate_network
+from tools.validation import resolve_and_validate, require_nmap
+from tools.config import get_scan_config
 
 
 class PingSweepTool(BaseTool):
-    # Standard-Ports für TCP-Connect Scan (wenn ICMP nicht verfügbar)
+    # Standard ports for TCP-Connect Scan (when ICMP not available)
     COMMON_PORTS = "22,80,443,8080,3389,5900"
 
-    # Konfigurierbare Limits
-    MAX_HOSTS = 65536  # /16 Maximum
-    ALLOW_PUBLIC = True  # Öffentliche IPs erlauben
+    def __init__(self):
+        super().__init__()
+        # v5.3: Lazy config - does NOT crash here
+        self._config = get_scan_config()
 
     @property
     def name(self) -> str:
@@ -17,7 +19,7 @@ class PingSweepTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Scannt ein Netzwerk nach aktiven Hosts. Nutzt ICMP Ping (Linux) oder TCP-Connect (macOS/Windows Docker)."
+        return "Scans a network for active hosts. Uses ICMP Ping (Linux) or TCP-Connect (macOS/Windows Docker). Supports IP, CIDR, or hostname."
 
     @property
     def parameters(self) -> dict:
@@ -26,20 +28,34 @@ class PingSweepTool(BaseTool):
             "properties": {
                 "network": {
                     "type": "string",
-                    "description": "Netzwerk in CIDR-Notation, z.B. 192.168.1.0/24",
+                    "description": "Target: IP address, CIDR notation (e.g., 192.168.1.0/24), or hostname",
                 },
                 "method": {
                     "type": "string",
                     "enum": ["auto", "icmp", "tcp"],
-                    "description": "Scan-Methode: auto (erkennt automatisch), icmp (Ping), tcp (Port-Scan)",
+                    "description": "Scan method: auto (auto-detect), icmp (Ping), tcp (Port-Scan)",
                 },
             },
             "required": ["network"],
         }
 
+    @property
+    def max_hosts(self) -> int:
+        """v5.3: Use discovery limit (65536 = /16), not portscan limit!"""
+        return self._config.max_hosts_discovery
+
+    @property
+    def exclude_list(self) -> list:
+        return self._config.exclude_ips
+
+    @property
+    def timeout(self) -> int:
+        """v5.3: Config-SSOT - actually use the timeout!"""
+        return self._config.timeout
+
     def _has_raw_socket_access(self) -> bool:
-        """Prüft ob Raw Sockets verfügbar sind (für ICMP Ping)"""
-        # Schneller Test: Versuche einen Ping auf localhost
+        """Checks if raw sockets are available (for ICMP Ping)"""
+        # Quick test: Try a ping on localhost
         try:
             result = subprocess.run(
                 ["nmap", "-sn", "-n", "127.0.0.1"],
@@ -47,25 +63,45 @@ class PingSweepTool(BaseTool):
                 text=True,
                 timeout=5,
             )
-            # Wenn "Host is up" gefunden wird, funktioniert ICMP
+            # If "Host is up" found, ICMP works
             return "Host is up" in result.stdout
         except Exception:
             return False
 
     def execute(self, network: str, method: str = "auto") -> str:
-        """Führt Netzwerk-Scan aus"""
-        # === VALIDIERUNG (Guardrails) ===
-        valid, error, normalized_network = validate_network(
-            network, max_hosts=self.MAX_HOSTS, allow_public=self.ALLOW_PUBLIC
+        """Execute network scan"""
+        # v5.8: Tool-Input Type-Guards (LLM can send wrong types!)
+        if not isinstance(network, str):
+            return f"Validation error: network must be string, got {type(network).__name__}"
+        if not isinstance(method, str):
+            return (
+                f"Validation error: method must be string, got {type(method).__name__}"
+            )
+
+        # v5.3: Check for config errors (Fail-Closed at execute time, not init)
+        if config_error := self._config.get_error():
+            return f"Validation error: {config_error}"
+
+        # v5.4: nmap-Check BEFORE method selection! _has_raw_socket_access calls nmap.
+        nmap_ok, nmap_error = require_nmap()
+        if not nmap_ok:
+            return nmap_error
+
+        # === VALIDATION (Guardrails) ===
+        valid, error, targets = resolve_and_validate(
+            network,
+            allow_public=False,
+            max_hosts=self.max_hosts,
+            exclude_list=self.exclude_list,
         )
         if not valid:
-            return f"Validierungsfehler: {error}"
+            return error  # Already has "Validation error:" prefix
 
-        # Normalisiertes Netzwerk verwenden (z.B. 192.168.1.1/24 -> 192.168.1.0/24)
-        network = normalized_network
+        # v5.2: Order-preserving dedup (not sorted - preserves resolution order)
+        targets = list(dict.fromkeys(targets))
 
         try:
-            # Methode bestimmen
+            # Determine method - nmap already verified above
             if method == "auto":
                 use_tcp = not self._has_raw_socket_access()
             elif method == "tcp":
@@ -73,29 +109,34 @@ class PingSweepTool(BaseTool):
             else:  # icmp
                 use_tcp = False
 
+            # v5.3: Consistent output header for all tools
+            target_info = f"{len(targets)} targets" if len(targets) > 1 else targets[0]
+
             if use_tcp:
-                # TCP-Connect Scan (funktioniert überall)
-                cmd = ["nmap", "-sT", "-p", self.COMMON_PORTS, "--open", network]
+                # TCP-Connect Scan (works everywhere)
+                cmd = ["nmap", "-sT", "-n", "-p", self.COMMON_PORTS, "--open"]
+                cmd.extend(targets)  # v5.1: All targets
                 scan_type = "TCP-Connect"
             else:
-                # ICMP Ping Sweep (braucht Raw Sockets)
-                cmd = ["nmap", "-sn", network]
+                # ICMP Ping Sweep (needs raw sockets)
+                cmd = ["nmap", "-sn", "-n"]
+                cmd.extend(targets)  # v5.1: All targets
                 scan_type = "ICMP Ping"
 
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=60,  # TCP-Scan braucht länger
+                timeout=self.timeout,  # v5.3: Use config timeout
             )
 
             if result.returncode == 0:
-                output = f"[Scan-Methode: {scan_type}]\n\n{result.stdout}"
+                output = f"[Ping Sweep: {target_info}]\n[Scan Method: {scan_type}]\n\n{result.stdout}"
                 return output
             else:
                 return f"Error: {result.stderr}"
 
         except subprocess.TimeoutExpired:
-            return "Error: Scan timeout (>60s). Versuche ein kleineres Subnetz."
+            return f"Error: Scan timeout (>{self.timeout}s). Try a smaller subnet."
         except Exception as e:
             return f"Error: {str(e)}"

@@ -18,6 +18,12 @@ class TestPingSweepTool:
         """Create a PingSweepTool instance."""
         return PingSweepTool()
 
+    @pytest.fixture
+    def mock_nmap_available(self):
+        """Mock nmap as available via shutil.which."""
+        with patch("tools.validation.shutil.which", return_value="/usr/bin/nmap"):
+            yield
+
     def test_tool_name(self, tool):
         """Tool has correct name."""
         assert tool.name == "ping_sweep"
@@ -33,19 +39,19 @@ class TestPingSweepTool:
         assert "network" in params["properties"]
         assert "network" in params["required"]
 
-    def test_execute_validates_input(self, tool):
+    def test_execute_validates_input(self, tool, mock_nmap_available):
         """Execute validates network input before scanning."""
         # Invalid input should return validation error
         result = tool.execute(network="-sV")
-        assert "Validierungsfehler" in result or "Error" in result
+        assert "Validation error" in result or "Error" in result
 
-    def test_execute_blocks_injection(self, tool):
+    def test_execute_blocks_injection(self, tool, mock_nmap_available):
         """Execute blocks injection attempts."""
         result = tool.execute(network="192.168.1.0/24; rm -rf /")
-        assert "Validierungsfehler" in result
+        assert "Validation error" in result
 
     @patch("tools.network.ping_sweep.subprocess.run")
-    def test_execute_calls_nmap(self, mock_run, tool):
+    def test_execute_calls_nmap(self, mock_run, tool, mock_nmap_available):
         """Execute calls nmap with correct parameters."""
         # Mock successful nmap response
         mock_result = MagicMock()
@@ -64,7 +70,7 @@ class TestPingSweepTool:
         assert "192.0.2.0/28" in call_args
 
     @patch("tools.network.ping_sweep.subprocess.run")
-    def test_execute_icmp_mode(self, mock_run, tool):
+    def test_execute_icmp_mode(self, mock_run, tool, mock_nmap_available):
         """Execute uses ICMP ping sweep when raw sockets available."""
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -78,7 +84,7 @@ class TestPingSweepTool:
         assert "-sn" in call_args  # ICMP ping sweep flag
 
     @patch("tools.network.ping_sweep.subprocess.run")
-    def test_execute_tcp_mode(self, mock_run, tool):
+    def test_execute_tcp_mode(self, mock_run, tool, mock_nmap_available):
         """Execute uses TCP connect scan when specified."""
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -91,7 +97,7 @@ class TestPingSweepTool:
         assert "-sT" in call_args  # TCP connect scan flag
 
     @patch("tools.network.ping_sweep.subprocess.run")
-    def test_execute_returns_output(self, mock_run, tool):
+    def test_execute_returns_output(self, mock_run, tool, mock_nmap_available):
         """Execute returns nmap output."""
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -107,7 +113,7 @@ class TestPingSweepTool:
         assert "192.0.2.2" in result
 
     @patch("tools.network.ping_sweep.subprocess.run")
-    def test_execute_handles_timeout(self, mock_run, tool):
+    def test_execute_handles_timeout(self, mock_run, tool, mock_nmap_available):
         """Execute handles nmap timeout gracefully."""
         import subprocess
 
@@ -119,7 +125,7 @@ class TestPingSweepTool:
         assert "timeout" in result.lower()
 
     @patch("tools.network.ping_sweep.subprocess.run")
-    def test_execute_handles_error(self, mock_run, tool):
+    def test_execute_handles_error(self, mock_run, tool, mock_nmap_available):
         """Execute handles nmap errors gracefully."""
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -131,22 +137,22 @@ class TestPingSweepTool:
 
         assert "Error" in result
 
-    def test_network_normalization(self, tool):
+    @patch("tools.network.ping_sweep.subprocess.run")
+    def test_network_normalization(self, mock_run, tool, mock_nmap_available):
         """Network address gets normalized."""
         # This test verifies that 192.168.1.100/24 gets normalized to 192.168.1.0/24
         # by the validation layer before nmap is called
-        with patch("tools.network.ping_sweep.subprocess.run") as mock_run:
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_result.stdout = "Host is up"
-            mock_run.return_value = mock_result
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Host is up"
+        mock_run.return_value = mock_result
 
-            with patch.object(tool, "_has_raw_socket_access", return_value=True):
-                tool.execute(network="192.0.2.100/28")
+        with patch.object(tool, "_has_raw_socket_access", return_value=True):
+            tool.execute(network="192.0.2.100/28")
 
-            call_args = mock_run.call_args[0][0]
-            # Should be normalized to network address
-            assert "192.0.2.96/28" in call_args
+        call_args = mock_run.call_args[0][0]
+        # Should be normalized to network address
+        assert "192.0.2.96/28" in call_args
 
 
 class TestHasRawSocketAccess:
