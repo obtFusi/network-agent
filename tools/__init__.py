@@ -1,5 +1,6 @@
 from tools.network.ping_sweep import PingSweepTool
 from tools.network.dns_lookup import DNSLookupTool
+from tools.network.port_scanner import PortScannerTool
 
 
 def get_all_tools():
@@ -7,4 +8,5 @@ def get_all_tools():
     return [
         PingSweepTool(),
         DNSLookupTool(),
+        PortScannerTool(),
     ]

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-01-12
+
+### Added
+- **Port Scanner Tool**: New `port_scanner` tool for TCP port scanning (#25)
+- **Flexible Port Specification**: Port lists (22,80,443) and ranges (1-1000), max 1000 ports
+- **Timing Templates**: T0 (slowest) to T5 (fastest) for scan speed control
+- **Skip Discovery**: `-Pn` flag support for hosts that block ping
+- **Configurable Defaults**: Default ports from config or --top-ports 100
+
 ## [0.4.0] - 2026-01-12
 
 ### Added
