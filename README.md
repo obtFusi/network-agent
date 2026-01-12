@@ -113,6 +113,43 @@ base_url: "http://host.docker.internal:11434/v1"
 
 </details>
 
+<details>
+<summary><strong>Scan-Einstellungen anpassen (Optional)</strong></summary>
+
+**Bestimmte Geräte vom Scan ausschließen:**
+
+Du willst bestimmte IPs nicht scannen (z.B. kritische Server, Drucker)? Füge sie in `config/settings.yaml` hinzu:
+
+```yaml
+scan:
+  exclude_ips:
+    - "192.168.1.1"       # Router nicht scannen
+    - "192.168.1.100"     # NAS ausschließen
+    - "10.0.0.0/24"       # Ganzes Management-Netz ignorieren
+```
+
+**Scan-Timeout erhöhen:**
+
+Bei langsamen Netzwerken oder vielen Hosts kann der Scan abbrechen. Erhöhe das Timeout:
+
+```yaml
+scan:
+  timeout: 300  # 5 Minuten statt Standard 2 Minuten
+```
+
+**Größere Netzwerke scannen:**
+
+Standardmäßig sind Port-Scans auf /24 (256 Hosts) begrenzt. Für größere Netze:
+
+```yaml
+scan:
+  max_hosts_portscan: 1024  # Erlaubt /22 Netzwerke
+```
+
+*Hinweis: Größere Scans dauern entsprechend länger!*
+
+</details>
+
 ### 3. Docker Image erstellen
 
 ```bash
@@ -150,12 +187,25 @@ Network Agent startet...
 >
 ```
 
-Jetzt kannst du Fragen stellen:
-- `Welche Geräte sind im Netzwerk 192.168.1.0/24?`
-- `Scanne das Netzwerk 10.0.0.0/24`
-- `Wer ist online im Subnetz 192.168.178.0/24?`
+### Was kann ich fragen?
 
-**Commands:**
+**Geräte im Netzwerk finden:**
+- `Welche Geräte sind im Netzwerk 192.168.1.0/24?`
+- `Scanne mein Heimnetzwerk 192.168.178.0/24`
+- `Wer ist gerade online?` *(wenn du vorher ein Netzwerk gescannt hast)*
+- `Zeig mir alle aktiven Hosts in 10.0.0.0/24`
+
+**Folgefragen stellen:**
+- `Welche davon haben offene Ports?`
+- `Was läuft auf 192.168.1.10?`
+- `Gibt es Webserver im Netzwerk?`
+
+**Tipps:**
+- Du musst immer ein Netzwerk angeben (z.B. `192.168.1.0/24`)
+- Der Agent merkt sich vorherige Ergebnisse - du kannst Folgefragen stellen
+- Formuliere so, wie du einen Kollegen fragen würdest
+
+### Befehle
 - `/help` - Verfügbare Befehle anzeigen
 - `/tools` - Verfügbare Tools auflisten (Name + Beschreibung)
 - `/config` - LLM-Konfiguration anzeigen (Model, Base URL, Context-Limit)
@@ -174,6 +224,24 @@ Jetzt kannst du Fragen stellen:
 | macOS | Ja | TCP-Connect | Normal starten |
 
 **Automatische Erkennung:** Der Agent erkennt automatisch, ob ICMP-Ping möglich ist. Falls nicht (Docker auf Windows/macOS), wird automatisch TCP-Connect Scan verwendet.
+
+## Sicherheit
+
+Der Network Agent ist für **lokale Netzwerk-Analyse** konzipiert:
+
+| Was ist erlaubt? | Was ist blockiert? |
+|------------------|-------------------|
+| Private IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) | Öffentliche IPs (Internet) |
+| Loopback (127.0.0.1) | IPv6-Adressen |
+| Dein lokales Netzwerk | Link-Local (169.254.x.x) |
+
+**Warum diese Einschränkungen?**
+- Verhindert versehentliches Scannen fremder Systeme im Internet
+- Schützt vor Missbrauch als Angriffswerkzeug
+- Fokussiert auf den eigentlichen Anwendungsfall: Heimnetzwerk-Analyse
+
+**Du willst trotzdem ein bestimmtes Netzwerk scannen?**
+Konfiguriere Ausnahmen in `config/settings.yaml` (siehe Scan-Einstellungen oben).
 
 ## Aktualisieren
 
@@ -204,22 +272,98 @@ docker rmi network-agent:latest
 
 ## Troubleshooting
 
-**"LLM_API_KEY environment variable not set"**
+> **Für Entwickler:** Projektstruktur und wie du eigene Tools hinzufügst findest du [am Ende dieser Seite](#für-entwickler-projektstruktur--eigene-tools).
+
+<details>
+<summary><strong>"LLM_API_KEY environment variable not set"</strong></summary>
+
 Die `.env` Datei fehlt oder enthält keinen Key.
 
-**"Error: Scan timeout"**
-Netzwerk zu groß oder nicht erreichbar. Kleineres Subnetz versuchen (z.B. /28 statt /24).
+**Lösung:**
+```bash
+cp .env.example .env
+# Dann .env bearbeiten und deinen API Key eintragen
+```
+</details>
 
-**Keine Geräte gefunden (Windows/macOS)**
-TCP-Connect Scan findet nur Geräte mit offenen Standard-Ports. Für vollständige Erkennung: WSL2 nutzen.
+<details>
+<summary><strong>"Error: Scan timeout"</strong></summary>
 
-**Model nicht gefunden / API Error**
-Prüfe in `config/settings.yaml`:
-- Ist `model` korrekt geschrieben?
+Der Scan dauert zu lange und bricht ab.
+
+**Mögliche Ursachen:**
+- Netzwerk zu groß (z.B. /16 statt /24)
+- Netzwerk nicht erreichbar
+- Firewall blockiert Pakete
+
+**Lösungen:**
+1. Kleineres Subnetz versuchen: `/28` (16 Hosts) statt `/24` (256 Hosts)
+2. Timeout in `config/settings.yaml` erhöhen: `timeout: 300`
+3. Prüfen ob du im richtigen Netzwerk bist
+</details>
+
+<details>
+<summary><strong>Keine Geräte gefunden</strong></summary>
+
+Der Scan läuft durch, findet aber nichts.
+
+**Auf Windows/macOS:**
+TCP-Connect Scan findet nur Geräte mit offenen Standard-Ports (22, 80, 443...).
+→ Für vollständige Erkennung: WSL2 auf Windows nutzen
+
+**Auf Linux:**
+- Bist du im richtigen Netzwerk? Prüfe mit `ip addr`
+- Ist `--network host` beim Docker-Start gesetzt?
+- Firewall auf dem Host-System prüfen
+</details>
+
+<details>
+<summary><strong>"Validation error: Public IP not allowed"</strong></summary>
+
+Du versuchst eine öffentliche IP oder ein Internet-Netzwerk zu scannen.
+
+**Warum?** Der Agent ist nur für lokale Netzwerke gedacht.
+
+**Lösung:** Nutze private IP-Bereiche:
+- `192.168.x.x/24` (Heimnetzwerke)
+- `10.x.x.x/24` (Firmennetzwerke)
+- `172.16-31.x.x/24` (Docker, VPNs)
+</details>
+
+<details>
+<summary><strong>Model nicht gefunden / API Error</strong></summary>
+
+Der LLM-Provider antwortet mit einem Fehler.
+
+**Prüfe in `config/settings.yaml`:**
+- Ist `model` korrekt geschrieben? (z.B. `gpt-4` nicht `GPT-4`)
 - Ist `base_url` für deinen Provider richtig?
-- Unterstützt dein Provider Tool Calling?
+- Unterstützt dein Provider Tool/Function Calling?
 
-## Dateien im Projekt
+**Prüfe deinen API Key:**
+- Ist der Key in `.env` korrekt?
+- Hat der Key genug Guthaben/Credits?
+- Ist der Key für das gewählte Model berechtigt?
+</details>
+
+<details>
+<summary><strong>Agent antwortet nicht sinnvoll</strong></summary>
+
+Die KI versteht deine Frage nicht oder gibt seltsame Antworten.
+
+**Tipps:**
+- Sei spezifischer: `Scanne 192.168.1.0/24` statt `Scanne mein Netzwerk`
+- Gib das Netzwerk immer mit an
+- Nutze `/clear` um die Session zurückzusetzen
+- Probiere ein anderes/größeres Model (z.B. gpt-4 statt gpt-3.5)
+</details>
+
+---
+
+<details>
+<summary><strong>Für Entwickler: Projektstruktur & eigene Tools</strong></summary>
+
+### Dateien im Projekt
 
 ```
 network-agent/
@@ -229,10 +373,12 @@ network-agent/
 │   └── llm.py          # LLM Client (OpenAI-kompatibel)
 ├── tools/
 │   ├── base.py         # Tool-Basisklasse
+│   ├── config.py       # Scan-Konfiguration (Singleton)
+│   ├── validation.py   # Input-Validierung
 │   └── network/
 │       └── ping_sweep.py   # nmap Ping-Sweep
 ├── config/
-│   ├── settings.yaml   # Provider & Model Konfiguration
+│   ├── settings.yaml   # Provider & Scan Konfiguration
 │   └── prompts/
 │       └── system.md   # System-Prompt für KI
 ├── Dockerfile          # Container-Definition
@@ -240,13 +386,15 @@ network-agent/
 └── .env.example        # API-Key Vorlage
 ```
 
-## Eigene Tools hinzufügen
+### Eigene Tools hinzufügen
 
 1. Neue Datei unter `tools/` erstellen
 2. Von `BaseTool` erben und `name`, `description`, `parameters`, `execute` implementieren
 3. In `tools/__init__.py` registrieren
 
 Beispiel siehe `tools/network/ping_sweep.py`.
+
+</details>
 
 ## Lizenz
 
