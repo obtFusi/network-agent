@@ -1,13 +1,13 @@
-# LLM Provider Konfiguration
-# Funktioniert mit jeder OpenAI-kompatiblen API
+# LLM Provider Configuration
+# Works with any OpenAI-compatible API
 #
-# WICHTIG: Alle Werte müssen an deinen Provider angepasst werden!
+# IMPORTANT: All values must be adapted to your provider!
 
 llm:
   provider:
-    # Model-ID (REQUIRED - abhängig vom Provider)
-    # Beispiele: gpt-4, gpt-3.5-turbo, llama-3.3-70b, mistral-large, etc.
-    model: ""  # <-- HIER DEIN MODEL EINTRAGEN
+    # Model-ID (REQUIRED - depends on provider)
+    # Examples: gpt-4, gpt-3.5-turbo, llama-3.3-70b, mistral-large, etc.
+    model: ""  # <-- ENTER YOUR MODEL HERE
 
     # API Endpoint (REQUIRED)
     # Venice.ai:  https://api.venice.ai/api/v1
@@ -16,29 +16,34 @@ llm:
     # LM Studio:  http://localhost:1234/v1
     # Together:   https://api.together.xyz/v1
     # Groq:       https://api.groq.com/openai/v1
-    base_url: ""  # <-- HIER DEINE API URL EINTRAGEN
+    base_url: ""  # <-- ENTER YOUR API URL HERE
 
     temperature: 0.7
     max_tokens: 4096
 
-    # Context-Limit (Optional - wird automatisch von /models abgefragt)
-    # Nur setzen falls API keine Info liefert
+    # Context-Limit (Optional - automatically queried from /models)
+    # Only set if API doesn't provide info
     # max_context_tokens: 8192
 
 agent:
   max_iterations: 10
   verbose: true
 
-tools:
-  network:
-    # Erlaubte Netzwerke für Scans (CIDR)
-    allowed_networks:
-      - "192.168.0.0/16"
-      - "10.0.0.0/8"
-      - "172.16.0.0/12"
-    timeout: 60
-
+# Scan configuration (v5.3: Config as SSOT)
 scan:
-  max_hosts: 65536
-  allow_public: true
+  # v5.3: Split for Discovery (fast, many hosts) vs PortScan (slow, few hosts)
+  max_hosts_discovery: 65536    # /16 - ping_sweep can scan large networks
+  max_hosts_portscan: 256       # /24 - port_scan/service_detect are slow
+
+  # Exclusion list (Networks/IPs) - targets matching these are blocked
+  exclude_ips: []
+  # Example:
+  # exclude_ips:
+  #   - "192.168.1.0/24"    # Exclude entire subnet
+  #   - "10.0.0.5"          # Exclude single IP
+
+  # Default timeout in seconds for all scan tools
+  timeout: 120
+
+  # Default TCP ports for port_scan (used as fallback if no ports specified)
   tcp_ports: "22,80,443,8080,3389,5900"
