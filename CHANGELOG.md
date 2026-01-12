@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] - 2026-01-12
+
+### Added
+- **Enhanced Validation Layer**: Centralized `resolve_and_validate()` function with hostname resolution, IPv6 blocking, and exclude list support (#23)
+- **Config Module**: `tools/config.py` with lazy-loaded singleton pattern for scan configuration
+- **Security Hardening**: Block Link-Local (169.254.x.x) and CGNAT (100.64.x.x) addresses
+- **Type Guards**: Reject non-string inputs from LLM to prevent type confusion attacks
+- **Split Host Limits**: Separate limits for discovery (65536) and port scan (256) operations
+
+### Changed
+- **Error Messages**: Consistent "Validation error:" prefix across all validation functions
+- **nmap Check Order**: `require_nmap()` called before validation to fail fast
+
+### Fixed
+- **Hostname Bypass**: Hostnames resolving to public IPs are now properly blocked
+- **Config Crash**: `--list-tools` no longer crashes on invalid config (lazy loading)
+
 ## [0.3.6] - 2026-01-09
 
 ### Added
