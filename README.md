@@ -201,11 +201,22 @@ Network Agent startet...
 - `Reverse DNS für 8.8.8.8`
 - `Welcher Nameserver ist für heise.de zuständig?`
 
+> **Gut zu wissen:**
+> - MX = Mailserver, NS = Nameserver, TXT = Texteinträge (z.B. SPF)
+> - "Reverse DNS" findet den Hostnamen zu einer IP-Adresse
+> - DNS-Abfragen funktionieren auch für öffentliche Domains
+
 **Port-Scans:**
 - `Scanne die Ports 22, 80, 443 auf 192.168.1.1`
 - `Welche Ports sind auf dem Router offen?`
 - `Prüfe Ports 1-1000 auf 192.168.1.10`
 - `Schneller Portscan auf 192.168.1.0/24` *(mit T4 Timing)*
+
+> **Gut zu wissen:**
+> - Ohne Port-Angabe werden die 100 häufigsten Ports geprüft
+> - Du kannst einzelne Ports (`22,80,443`) oder Bereiche (`1-1000`) angeben
+> - "Schnell" oder "langsam" steuert die Scan-Geschwindigkeit
+> - Manche Geräte antworten nicht auf Ping - sag dann "auch wenn kein Ping"
 
 **Folgefragen stellen:**
 - `Welche davon haben offene Ports?`
