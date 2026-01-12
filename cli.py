@@ -5,18 +5,18 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 
 def truncate_description(desc: str, max_length: int = 60) -> str:
-    """Kürzt eine Beschreibung auf den ersten Satz oder max_length Zeichen.
+    """Truncate description to first sentence or max_length characters.
 
     Args:
-        desc: Die zu kürzende Beschreibung
-        max_length: Maximale Länge (default: 60)
+        desc: Description to truncate
+        max_length: Maximum length (default: 60)
 
     Returns:
-        Gekürzte Beschreibung
+        Truncated description
     """
     if not desc:
         return ""
@@ -28,7 +28,7 @@ def truncate_description(desc: str, max_length: int = 60) -> str:
 
 
 def get_help_text() -> str:
-    """Gibt den Hilfetext für alle Commands zurück."""
+    """Return help text for all commands."""
     return """Commands:
   /help    - Show available commands
   /tools   - List available tools
@@ -40,7 +40,7 @@ def get_help_text() -> str:
 
 
 def get_tools_text() -> str:
-    """Gibt die Liste aller Tools zurück (ohne Agent-Initialisierung)."""
+    """Return list of all tools (without agent initialization)."""
     from tools import get_all_tools
 
     lines = ["Available Tools:"]
@@ -51,19 +51,19 @@ def get_tools_text() -> str:
 
 
 def check_setup() -> tuple[bool, list[str]]:
-    """Prüft ob alle erforderlichen Konfigurationen vorhanden sind.
+    """Check if all required configurations are present.
 
     Returns:
         (is_configured, missing_items)
     """
     missing = []
 
-    # Config laden
+    # Load config
     config_path = Path("config/settings.yaml")
     config = yaml.safe_load(config_path.read_text())
     provider = config.get("llm", {}).get("provider", {})
 
-    # Pflichtfelder prüfen
+    # Check required fields
     if not provider.get("model"):
         missing.append("model in config/settings.yaml")
     if not provider.get("base_url"):
@@ -75,46 +75,46 @@ def check_setup() -> tuple[bool, list[str]]:
 
 
 def show_setup_guide(missing: list[str]):
-    """Zeigt Setup-Anleitung für fehlende Konfiguration."""
+    """Show setup guide for missing configuration."""
     print("=" * 60)
-    print("Network Agent - Setup erforderlich")
+    print("Network Agent - Setup Required")
     print("=" * 60)
     print()
-    print("Folgende Konfiguration fehlt:")
+    print("Missing configuration:")
     for item in missing:
         print(f"  - {item}")
     print()
     print("-" * 60)
-    print("SETUP-ANLEITUNG:")
+    print("SETUP GUIDE:")
     print("-" * 60)
     print()
-    print("1. API Key einrichten:")
+    print("1. Set up API key:")
     print("   cp .env.example .env")
-    print("   # Dann .env bearbeiten und Key eintragen:")
-    print("   LLM_API_KEY=dein_api_key_hier")
+    print("   # Then edit .env and add your key:")
+    print("   LLM_API_KEY=your_api_key_here")
     print()
-    print("2. Provider konfigurieren (config/settings.yaml):")
+    print("2. Configure provider (config/settings.yaml):")
     print()
-    print("   Für OpenAI:")
+    print("   For OpenAI:")
     print('     model: "gpt-4"')
     print('     base_url: "https://api.openai.com/v1"')
     print()
-    print("   Für Groq (kostenlos):")
+    print("   For Groq (free):")
     print('     model: "llama-3.3-70b-versatile"')
     print('     base_url: "https://api.groq.com/openai/v1"')
     print()
-    print("   Für Ollama (lokal):")
+    print("   For Ollama (local):")
     print('     model: "llama3"')
     print('     base_url: "http://localhost:11434/v1"')
     print()
-    print("Mehr Provider: siehe README.md")
+    print("More providers: see README.md")
     print("=" * 60)
 
 
 def main():
     # Argument parsing
     parser = argparse.ArgumentParser(
-        description="Network Agent - KI-gesteuerter Netzwerk-Scanner"
+        description="Network Agent - AI-powered network scanner"
     )
     parser.add_argument(
         "--version", "-v", action="version", version=f"Network Agent v{__version__}"
@@ -127,7 +127,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # Commands die OHNE LLM-Setup funktionieren
+    # Commands that work WITHOUT LLM setup
     if args.help_commands:
         print(get_help_text())
         sys.exit(0)
@@ -139,13 +139,13 @@ def main():
     # Load environment variables
     load_dotenv()
 
-    # Setup-Check (nur für interaktiven Modus)
+    # Setup check (only for interactive mode)
     is_configured, missing = check_setup()
     if not is_configured:
         show_setup_guide(missing)
         sys.exit(1)
 
-    # Ab hier: Alles konfiguriert, Agent starten
+    # From here: All configured, start agent
     from agent.core import NetworkAgent
 
     # Load config
@@ -157,13 +157,13 @@ def main():
     system_prompt = system_prompt_path.read_text()
 
     # Initialize agent
-    print("Network Agent startet...")
+    print("Network Agent starting...")
     print(f"   Model: {config['llm']['provider']['model']}")
 
     agent = NetworkAgent(config, system_prompt)
 
-    # Context-Limit anzeigen
-    print(f"   Context-Limit: {agent.context_limit:,} tokens")
+    # Show context limit
+    print(f"   Context limit: {agent.context_limit:,} tokens")
     print("   Type /help for available commands\n")
 
     # REPL Loop
@@ -185,7 +185,7 @@ def main():
 
                 if cmd == "/clear":
                     agent.clear_session()
-                    print("[Session zurückgesetzt]")
+                    print("[Session reset]")
                     continue
 
                 if cmd == "/version":
@@ -227,7 +227,7 @@ def main():
             response = agent.run(user_input)
             print(f"\n{response}")
 
-            # Token usage anzeigen
+            # Show token usage
             if agent.last_usage:
                 pct = agent.context_usage_percent
                 limit = agent.context_limit

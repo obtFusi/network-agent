@@ -5,7 +5,7 @@ from tools.network.service_detect import ServiceDetectTool
 
 
 def get_all_tools():
-    """Registry: Alle verfügbaren Tools"""
+    """Registry: All available tools."""
     return [
         PingSweepTool(),
         DNSLookupTool(),
