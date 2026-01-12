@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-01-12
+
+### Added
+- **DNS Lookup Tool**: New `dns_lookup` tool for DNS queries - A, AAAA, MX, TXT, PTR, NS, SOA, CNAME, SRV records (#24)
+- **Auto-Detect Record Type**: IP addresses auto-detect to PTR, hostnames to A record
+- **Policy Exception**: DNS lookups allowed on public targets (query DNS servers, not scan targets)
+
 ## [0.3.7] - 2026-01-12
 
 ### Added
