@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-01-12
+
+### Added
+- **Service Detection Tool**: New `service_detect` tool to identify services and versions (#26)
+- **Version Probing**: Detects service names and versions (e.g., "OpenSSH 8.9", "Apache 2.4")
+- **Intensity Control**: Probe intensity 1-9 for balance between speed and accuracy
+- **Extended Timeout**: Default 300s timeout (service detection is slower than port scanning)
+
 ## [0.5.0] - 2026-01-12
 
 ### Added

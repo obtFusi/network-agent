@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 
 def truncate_description(desc: str, max_length: int = 60) -> str:
