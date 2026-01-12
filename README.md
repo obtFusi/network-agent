@@ -1,8 +1,19 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](CHANGELOG.md)
 
 Ein KI-gesteuerter Netzwerk-Scanner. Statt komplizierte Terminal-Befehle zu lernen, stellst du einfach Fragen wie *"Welche Geräte sind in meinem Netzwerk?"* - der Agent erledigt den Rest.
+
+## Breaking Change in v0.7.0
+
+> **Ab Version 0.7.0** sind alle CLI-Meldungen und der System-Prompt auf Englisch umgestellt.
+>
+> **Warum?** Das Projekt ist auf GitHub öffentlich und soll international nutzbar sein.
+>
+> **Du willst deutsche Antworten?** Füge am Ende von `config/prompts/system.md` hinzu:
+> ```
+> Always respond in German (Deutsch).
+> ```
 
 ## Was macht dieses Tool?
 
@@ -178,11 +189,10 @@ docker run -it --rm --env-file .env network-agent:latest
 
 Nach dem Start siehst du:
 ```
-Network Agent startet...
+Network Agent starting...
    Model: gpt-4
+   Context limit: 8,192 tokens
    Type /help for available commands
-
-   Context-Limit: 8,192 tokens
 
 >
 ```
@@ -278,6 +288,40 @@ Der Network Agent ist für **lokale Netzwerk-Analyse** konzipiert:
 
 **Du willst trotzdem ein bestimmtes Netzwerk scannen?**
 Konfiguriere Ausnahmen in `config/settings.yaml` (siehe Scan-Einstellungen oben).
+
+<details>
+<summary><strong>Technische Details zu den Tools</strong></summary>
+
+### Host-Limits
+
+| Tool | Max Hosts | Netzwerk | Grund |
+|------|-----------|----------|-------|
+| ping_sweep | 65.536 | /16 | Schnell: 1 Probe pro Host |
+| port_scanner | 256 | /24 | Langsam: viele Probes pro Port |
+| service_detect | 256 | /24 | Sehr langsam: mehrere Probes pro Service |
+| dns_lookup | 1 | Einzeln | DNS-Abfragen sind immer einzeln |
+
+**Warum der Unterschied?** Discovery (ping_sweep) sendet nur einen Probe pro Host und ist deshalb schnell. Port- und Service-Scans senden viele Probes pro Host und würden bei großen Netzwerken sehr lange dauern.
+
+### Port-Defaults
+
+| Tool | Default Ports | Konfigurierbar? |
+|------|---------------|-----------------|
+| ping_sweep | 22, 80, 443, 8080 | Nein (fest) |
+| port_scanner | Top 100 | Ja (`ports` Parameter) |
+| service_detect | Top 20 | Ja (`ports` Parameter) |
+
+### IPv6 Support
+
+**Status:** Nicht unterstützt (nicht geplant)
+
+Alle Tools lehnen IPv6-Adressen ab (z.B. `::1`, `fe80::1`, `2001:db8::1`). Der Fokus liegt auf IPv4 Heimnetzwerken.
+
+### DNS Lookup Exception
+
+Das `dns_lookup` Tool ist das einzige Tool, das öffentliche Domains abfragen darf. Das ist bewusst so, weil DNS-Abfragen keine Scans sind - sie fragen nur DNS-Server ab.
+
+</details>
 
 ## Aktualisieren
 
