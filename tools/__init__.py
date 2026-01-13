@@ -2,6 +2,7 @@ from tools.network.ping_sweep import PingSweepTool
 from tools.network.dns_lookup import DNSLookupTool
 from tools.network.port_scanner import PortScannerTool
 from tools.network.service_detect import ServiceDetectTool
+from tools.web.web_search import WebSearchTool
 
 
 def get_all_tools():
@@ -11,4 +12,5 @@ def get_all_tools():
         DNSLookupTool(),
         PortScannerTool(),
         ServiceDetectTool(),
+        WebSearchTool(),
     ]
