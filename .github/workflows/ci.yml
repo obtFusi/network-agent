@@ -75,7 +75,7 @@ jobs:
       # Container Security Scan (gepinnt auf Release-Tag!)
       # ignore-unfixed: true -> Base-Image CVEs ohne Fix blockieren CI nicht
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: 'network-agent:ci'
           format: 'table'
