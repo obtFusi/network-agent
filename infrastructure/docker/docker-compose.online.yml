@@ -1,0 +1,35 @@
+# Network Agent - Online Mode Override
+# Enables SearXNG for web search capabilities
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
+#
+# NOTE: This requires internet access from the appliance.
+# Default mode is offline-first for security.
+
+services:
+  searxng:
+    image: searxng/searxng:2024.12.23
+    container_name: searxng
+    hostname: searxng
+    restart: unless-stopped
+    volumes:
+      - ./config/searxng-settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - agent-net
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  net-agent:
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+    depends_on:
+      searxng:
+        condition: service_healthy
+
+networks:
+  agent-net:

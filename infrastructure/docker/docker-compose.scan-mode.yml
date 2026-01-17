@@ -1,0 +1,37 @@
+# Network Agent - Scan Mode Override
+# Enables host network for full L2/L3 scanning capabilities
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.scan-mode.yml up -d
+#
+# WARNING: This bypasses Docker network isolation!
+# Only use when you need:
+#   - ARP scanning (Layer 2)
+#   - Raw socket access
+#   - Full subnet discovery
+#   - VLAN access
+
+services:
+  net-agent:
+    network_mode: host
+    environment:
+      # Override service URLs for host mode
+      - LLM_BASE_URL=http://127.0.0.1:11434/v1
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD}@127.0.0.1:5432/network_agent
+
+  # Expose Ollama on localhost for net-agent in host mode
+  ollama:
+    ports:
+      - "127.0.0.1:11434:11434"
+
+  # Expose PostgreSQL on localhost for net-agent in host mode
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  # Caddy still handles external access
+  caddy:
+    environment:
+      # net-agent is now on host, not in Docker network
+      - UPSTREAM_HOST=host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
