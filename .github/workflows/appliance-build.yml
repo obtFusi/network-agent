@@ -264,15 +264,15 @@ jobs:
           # Create .env with test values and mark as initialized
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 root@$VM_IP << 'ENDSSH'
-            # Create test .env
-            cat > /opt/network-agent/.env << 'EOF'
-POSTGRES_USER=agent
-POSTGRES_PASSWORD=test-password-123
-BASIC_AUTH_USER=admin
-BASIC_AUTH_HASH=$2a$14$test.hash.for.testing.only
-VERSION=test
-EOF
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 root@$VM_IP bash << 'EOF'
+            # Create test .env using printf to avoid YAML parsing issues
+            printf '%s\n' \
+              'POSTGRES_USER=agent' \
+              'POSTGRES_PASSWORD=test-password-123' \
+              'BASIC_AUTH_USER=admin' \
+              'BASIC_AUTH_HASH=$2a$14$test.hash.for.testing.only' \
+              'VERSION=test' \
+              > /opt/network-agent/.env
             chmod 600 /opt/network-agent/.env
 
             # Mark as initialized
@@ -282,7 +282,7 @@ EOF
             # Start services
             cd /opt/network-agent
             docker compose up -d
-ENDSSH
+          EOF
 
       - name: Wait for services
         run: |
