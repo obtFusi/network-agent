@@ -132,6 +132,11 @@ build {
   name    = "network-agent"
   sources = ["source.qemu.network-agent"]
 
+  # Create target directory first (file provisioner cannot create directories)
+  provisioner "shell" {
+    inline = ["mkdir -p /opt/network-agent"]
+  }
+
   # Copy Docker Compose files
   provisioner "file" {
     source      = "../docker/"
