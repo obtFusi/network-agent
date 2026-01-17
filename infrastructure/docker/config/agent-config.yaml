@@ -1,0 +1,42 @@
+# Network Agent Appliance Configuration
+# Pre-configured for local Ollama with Qwen3 30B-A3B
+
+llm:
+  provider:
+    # Qwen3 30B-A3B - MoE model optimized for CPU inference
+    # Uses only 3B active parameters per token, runs well on 24GB RAM
+    model: "qwen3:30b-a3b"
+
+    # Local Ollama endpoint (container name via Docker networking)
+    base_url: "http://ollama:11434/v1"
+
+    temperature: 0.7
+    max_tokens: 4096
+
+    # Qwen3 30B supports 32k context
+    max_context_tokens: 32768
+
+agent:
+  max_iterations: 10
+  verbose: true
+
+# Scan configuration
+scan:
+  # Discovery can scan large networks
+  max_hosts_discovery: 65536    # /16
+
+  # Port scanning is slower, limit to /24
+  max_hosts_portscan: 256
+
+  # Exclusion list (add internal/sensitive networks here)
+  exclude_ips: []
+  # Example:
+  # exclude_ips:
+  #   - "192.168.1.0/24"
+  #   - "10.0.0.5"
+
+  # Timeout for scan operations
+  timeout: 120
+
+  # Default ports for quick scans
+  tcp_ports: "22,80,443,8080,3389,5900"

@@ -1,0 +1,74 @@
+# SearXNG Settings for Network Agent Appliance
+# Minimal configuration for web search functionality
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Network Agent Search"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "network-agent-searxng-secret-change-in-production"
+  bind_address: "0.0.0.0"
+  port: 8080
+  image_proxy: false
+
+ui:
+  static_use_hash: true
+  default_theme: simple
+  infinite_scroll: true
+
+# Enable only essential search engines
+engines:
+  # General search
+  - name: google
+    engine: google
+    shortcut: g
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: bi
+    disabled: false
+
+  # Security-focused sources
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false
+
+  - name: stackoverflow
+    engine: stackoverflow
+    shortcut: so
+    disabled: false
+
+  # Disable resource-heavy engines
+  - name: google images
+    disabled: true
+
+  - name: google videos
+    disabled: true
+
+  - name: youtube
+    disabled: true
+
+# Rate limiting (prevent abuse)
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 15.0
+  useragent_suffix: "NetworkAgent"
+  pool_connections: 100
+  pool_maxsize: 20
