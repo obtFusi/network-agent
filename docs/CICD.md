@@ -206,10 +206,65 @@ ignoreLabels: |
 
 **Wichtig:** NICHT als Required Check konfiguriert (Dependabot-Kompatibilität).
 
-### 2.6 Appliance/OVA Build Workflows
+### 2.6 Appliance Build Workflow (`.github/workflows/appliance-build.yml`)
 
-**Dateien:** `appliance-build.yml`, `ova-build.yml`
-**Zweck:** Proxmox Appliance und OVA-Export (in Entwicklung)
+**Trigger:** `workflow_dispatch` (manuell) oder `release` (bei Tag)
+**Runner:** Self-hosted (Proxmox LXC) für Build-Jobs
+
+```yaml
+# Manuell triggern (GitHub UI oder CLI)
+gh workflow run appliance-build.yml -f version=0.8.0
+```
+
+**Jobs:**
+
+| Job | Runner | Beschreibung |
+|-----|--------|--------------|
+| `validate` | ubuntu-latest | Packer Template validieren |
+| `build` | **self-hosted** | qcow2 Image mit Packer bauen (~22GB) |
+| `compress` | **self-hosted** | zstd komprimieren, in Parts splitten |
+| `release` | ubuntu-latest | Parts zu GitHub Release hochladen |
+
+**Warum Self-hosted?**
+- GitHub-hosted Runner haben nur ~14GB Disk (Image ist 22GB)
+- Packer braucht KVM/QEMU (nicht auf GitHub-hosted verfügbar)
+- Build braucht ~8GB RAM
+
+### 2.7 Self-hosted Runner
+
+**Location:** Proxmox LXC 150 (`github-runner`)
+**Host:** 10.0.0.69 (Proxmox)
+
+| Ressource | Wert |
+|-----------|------|
+| OS | Debian 13 |
+| RAM | 8 GB |
+| CPU | 4 Cores |
+| Disk | 80 GB |
+| Labels | `self-hosted`, `Linux`, `X64`, `ova-builder` |
+
+**Security (Public Repo!):**
+- **Ephemeral Mode:** Runner re-registriert nach jedem Job
+- **Trigger-Restriction:** NUR `workflow_dispatch` + `release`, NIEMALS `pull_request`
+- **Dedicated User:** Läuft als `runner`, nicht als root
+- **PAT in .env:** Token nicht im systemd-Service gespeichert
+
+**Management:**
+
+```bash
+# Runner Status prüfen
+ssh root@github-runner systemctl status github-runner
+
+# Logs anzeigen
+ssh root@github-runner journalctl -u github-runner -f
+
+# Runner in GitHub prüfen
+gh api /repos/obtFusi/network-agent/actions/runners --jq '.runners[]'
+```
+
+**Scripts:**
+- `infrastructure/scripts/create-runner-lxc.sh` - LXC Setup auf Proxmox
+- `infrastructure/scripts/runner-wrapper.sh` - Ephemeral Loop mit Token-Refresh
 
 ---
 
