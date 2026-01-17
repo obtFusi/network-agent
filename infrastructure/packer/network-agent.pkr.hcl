@@ -48,7 +48,7 @@ variable "disk_size" {
 variable "memory" {
   type        = number
   description = "VM memory in MB (for build only)"
-  default     = 8192
+  default     = 16384
 }
 
 variable "cpus" {
