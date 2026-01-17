@@ -36,11 +36,6 @@ VOLUME /app/data
 # Expose web interface port
 EXPOSE 8080
 
-# Note: network-agent currently only supports REPL mode
-# TODO: Add HTTP server mode for appliance use-case
-# For now, this container is meant to be run interactively:
-#   docker run -it --rm network-agent
-# or with a specific command via stdin
-
-# Default: interactive REPL mode
-CMD ["python", "cli.py"]
+# Default: HTTP API server mode for appliance
+# For interactive REPL, run: docker run -it --rm network-agent python cli.py
+CMD ["python", "cli.py", "--serve"]

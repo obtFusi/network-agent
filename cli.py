@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 
 def truncate_description(desc: str, max_length: int = 60) -> str:
@@ -125,6 +125,15 @@ def main():
     parser.add_argument(
         "--list-tools", action="store_true", help="List available tools"
     )
+    parser.add_argument(
+        "--serve", action="store_true", help="Start HTTP API server instead of REPL"
+    )
+    parser.add_argument(
+        "--host", default="0.0.0.0", help="API server host (default: 0.0.0.0)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=8080, help="API server port (default: 8080)"
+    )
     args = parser.parse_args()
 
     # Commands that work WITHOUT LLM setup
@@ -146,7 +155,6 @@ def main():
         sys.exit(1)
 
     # From here: All configured, start agent
-    from agent.core import NetworkAgent
 
     # Load config
     config_path = Path("config/settings.yaml")
@@ -155,6 +163,24 @@ def main():
     # Load system prompt
     system_prompt_path = Path("config/prompts/system.md")
     system_prompt = system_prompt_path.read_text()
+
+    # HTTP API Server mode
+    if args.serve:
+        import uvicorn
+        from agent.api import create_app
+
+        print("Network Agent API Server starting...")
+        print(f"   Model: {config['llm']['provider']['model']}")
+        print(f"   Host: {args.host}")
+        print(f"   Port: {args.port}")
+        print(f"   Docs: http://{args.host}:{args.port}/docs")
+
+        app = create_app(config, system_prompt)
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        sys.exit(0)
+
+    # REPL mode
+    from agent.core import NetworkAgent
 
     # Initialize agent
     print("Network Agent starting...")
