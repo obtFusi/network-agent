@@ -9,8 +9,8 @@
 services:
   net-agent:
     build:
-      context: ../..  # Repo root for source code access
-      dockerfile: infrastructure/docker/net-agent/Dockerfile
+      context: .  # Appliance: source code copied to same directory
+      dockerfile: net-agent/Dockerfile
     image: network-agent:${VERSION:-latest}
     container_name: net-agent
     hostname: net-agent
