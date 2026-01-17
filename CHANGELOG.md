@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-01-17
+
 ### Added
+- **HTTP API Server**: FastAPI-based REST API for appliance mode (#57)
+  - Session management with thread-safe in-memory store
+  - `/health` and `/ready` endpoints for Docker healthchecks
+  - `/sessions` CRUD endpoints for multi-user support
+  - `/sessions/{id}/chat` endpoint with async wrapper for sync agent
+  - Structured logging with `structlog`
+  - Middleware: Request ID tracking, timing, error handling
+- **CLI Server Mode**: New `--serve`, `--host`, `--port` flags
 - **Proxmox Appliance Infrastructure**: Docker Compose stack, Packer templates, security scripts (#53)
 - **Self-hosted GitHub Actions Runner**: Dedicated LXC on Proxmox for appliance builds (#43)
 - **Appliance Build Workflow**: `appliance-build.yml` for qcow2 VM builds

@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg)](CHANGELOG.md)
 
 > **Für Entwickler:** [CI/CD-Dokumentation](docs/CICD.md) - Pipeline, GitHub Actions, Claude Code Skills
 
