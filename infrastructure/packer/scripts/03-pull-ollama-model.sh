@@ -10,7 +10,7 @@ if [[ "${INCLUDE_MODEL:-true}" != "true" ]]; then
     exit 0
 fi
 
-MODEL="${OLLAMA_MODEL:-qwen3:30b}"
+MODEL="${OLLAMA_MODEL:-qwen3:30b-a3b}"
 echo "Model: $MODEL"
 
 # Create Docker volume for models
@@ -20,7 +20,7 @@ docker volume create ollama-models
 echo "Starting Ollama container..."
 docker run -d --name ollama-temp \
     -v ollama-models:/root/.ollama \
-    ollama/ollama:0.5.4
+    ollama/ollama:0.14.1
 
 # Wait for Ollama to be ready
 echo "Waiting for Ollama to start..."
