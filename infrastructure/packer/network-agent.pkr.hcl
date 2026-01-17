@@ -60,7 +60,7 @@ variable "cpus" {
 variable "ollama_model" {
   type        = string
   description = "Ollama model to embed"
-  default     = "qwen3:30b-a3b"
+  default     = "qwen3:30b"
 }
 
 # Local variables
