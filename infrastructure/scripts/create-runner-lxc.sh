@@ -20,7 +20,7 @@ MEMORY=8192  # 8GB
 CORES=4
 DISK_SIZE=80  # GB
 STORAGE="local-lvm"
-TEMPLATE="debian-12-standard_12.7-1_amd64.tar.zst"
+TEMPLATE="debian-13-standard_13.1-2_amd64.tar.zst"
 RUNNER_VERSION="2.321.0"
 
 echo "=== Creating GitHub Actions Runner LXC ==="
@@ -99,6 +99,13 @@ apt-get update
 apt-get install -y packer
 '
 
+# Create runner user
+echo "Creating runner user..."
+pct exec $VMID -- bash -c '
+useradd -m -s /bin/bash runner
+usermod -aG docker runner
+'
+
 # Download and setup GitHub Actions Runner
 echo "Setting up GitHub Actions Runner..."
 pct exec $VMID -- bash -c "
@@ -117,6 +124,9 @@ rm actions-runner.tar.gz
 
 echo 'Installing dependencies...'
 ./bin/installdependencies.sh
+
+echo 'Setting ownership...'
+chown -R runner:runner /opt/actions-runner
 "
 
 # Create systemd service for runner wrapper
@@ -131,9 +141,9 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=root
+User=runner
 WorkingDirectory=/opt/actions-runner
-Environment=GITHUB_PAT=PLACEHOLDER
+EnvironmentFile=/opt/actions-runner/.env
 ExecStart=/opt/actions-runner/runner-wrapper.sh
 Restart=always
 RestartSec=10
@@ -141,6 +151,11 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Create empty .env file with correct permissions
+touch /opt/actions-runner/.env
+chown runner:runner /opt/actions-runner/.env
+chmod 600 /opt/actions-runner/.env
 '
 
 # Get container IP
@@ -156,12 +171,15 @@ echo "Next steps:"
 echo ""
 echo "1. Copy the runner-wrapper.sh script to the container:"
 echo "   pct push $VMID /path/to/runner-wrapper.sh /opt/actions-runner/runner-wrapper.sh"
+echo "   pct exec $VMID -- chown runner:runner /opt/actions-runner/runner-wrapper.sh"
 echo "   pct exec $VMID -- chmod +x /opt/actions-runner/runner-wrapper.sh"
 echo ""
-echo "2. Create a GitHub PAT with 'admin:repo' scope"
+echo "2. Create a GitHub Fine-grained PAT:"
+echo "   - Repository: obtFusi/network-agent"
+echo "   - Permissions: Administration (Read & Write)"
 echo ""
-echo "3. Configure the service with your PAT:"
-echo "   pct exec $VMID -- sed -i 's/PLACEHOLDER/ghp_your_token/' /etc/systemd/system/github-runner.service"
+echo "3. Configure the PAT (stored in .env file, not in service):"
+echo "   pct exec $VMID -- bash -c 'echo \"GITHUB_PAT=github_pat_xxx\" > /opt/actions-runner/.env'"
 echo "   pct exec $VMID -- systemctl daemon-reload"
 echo "   pct exec $VMID -- systemctl enable github-runner"
 echo "   pct exec $VMID -- systemctl start github-runner"

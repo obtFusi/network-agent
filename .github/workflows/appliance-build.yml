@@ -1,0 +1,349 @@
+name: Appliance Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., 0.4.0)'
+        required: true
+        type: string
+  release:
+    types: [published]
+
+concurrency:
+  group: appliance-build
+  cancel-in-progress: false
+
+env:
+  PACKER_VERSION: "1.11.0"
+
+jobs:
+  validate:
+    name: Validate Templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Initialize Packer
+        working-directory: infrastructure/packer
+        run: packer init .
+
+      - name: Validate Packer template
+        working-directory: infrastructure/packer
+        run: packer validate network-agent.pkr.hcl
+
+      - name: Validate docker-compose files
+        run: |
+          docker compose -f infrastructure/docker/docker-compose.yml config --quiet
+          docker compose -f infrastructure/docker/docker-compose.yml \
+                        -f infrastructure/docker/docker-compose.scan-mode.yml config --quiet
+          docker compose -f infrastructure/docker/docker-compose.yml \
+                        -f infrastructure/docker/docker-compose.online.yml config --quiet
+
+  build:
+    name: Build qcow2 Image
+    runs-on: self-hosted
+    needs: validate
+    timeout-minutes: 240
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudflare.docker.com:443
+            cdimage.debian.org:443
+            deb.debian.org:443
+            security.debian.org:443
+            registry.ollama.ai:443
+            download.docker.com:443
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Verify KVM support
+        run: |
+          if [[ ! -e /dev/kvm ]]; then
+            echo "ERROR: KVM not available. Self-hosted runner requires hardware virtualization."
+            exit 1
+          fi
+          ls -la /dev/kvm
+
+      - name: Initialize Packer
+        working-directory: infrastructure/packer
+        run: packer init .
+
+      - name: Build qcow2 Image
+        working-directory: infrastructure/packer
+        run: |
+          # Strip 'v' prefix from version if present
+          VERSION_CLEAN="${VERSION#v}"
+          echo "Building version: $VERSION_CLEAN"
+
+          packer build \
+            -var "version=${VERSION_CLEAN}" \
+            -on-error=cleanup \
+            network-agent.pkr.hcl
+
+      - name: Verify build output
+        run: |
+          ls -lh infrastructure/packer/output/
+          QCOW2_FILE=$(ls infrastructure/packer/output/*.qcow2)
+          echo "Built image: $QCOW2_FILE"
+          echo "QCOW2_FILE=$QCOW2_FILE" >> $GITHUB_ENV
+
+      - name: Compress with zstd
+        run: |
+          cd infrastructure/packer/output
+          VERSION_CLEAN="${VERSION#v}"
+
+          echo "Compressing with zstd (level 19)..."
+          zstd -19 --long=31 -T0 -v *.qcow2 -o "network-agent-${VERSION_CLEAN}.qcow2.zst"
+
+          echo "Compressed size:"
+          ls -lh *.zst
+
+      - name: Split into parts
+        run: |
+          cd infrastructure/packer/output
+          VERSION_CLEAN="${VERSION#v}"
+
+          echo "Splitting into 1.9GB parts..."
+          split -b 1900M -a 2 "network-agent-${VERSION_CLEAN}.qcow2.zst" "network-agent-${VERSION_CLEAN}.qcow2.zst.part-"
+
+          # Rename numeric suffixes to alpha (aa, ab, ac, etc.)
+          for f in *.part-[0-9][0-9]; do
+            if [[ -f "$f" ]]; then
+              num="${f##*.part-}"
+              # Convert 00->aa, 01->ab, etc.
+              first=$(printf "\\x$(printf '%02x' $((97 + 10#$num / 26)))")
+              second=$(printf "\\x$(printf '%02x' $((97 + 10#$num % 26)))")
+              mv "$f" "${f%.part-*}.part-${first}${second}"
+            fi
+          done
+
+          # Remove the unsplit compressed file
+          rm -f "network-agent-${VERSION_CLEAN}.qcow2.zst"
+
+          echo "Parts created:"
+          ls -lh *.part-*
+
+      - name: Generate checksums
+        run: |
+          cd infrastructure/packer/output
+          sha256sum *.part-* > SHA256SUMS
+          echo "Checksums:"
+          cat SHA256SUMS
+
+      - name: Copy install script
+        run: |
+          VERSION_CLEAN="${VERSION#v}"
+          cp infrastructure/scripts/install-network-agent.sh infrastructure/packer/output/
+          # Update version in script
+          sed -i "s/VERSION:-0.4.0/VERSION:-${VERSION_CLEAN}/" infrastructure/packer/output/install-network-agent.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: appliance-${{ env.VERSION }}
+          path: |
+            infrastructure/packer/output/*.part-*
+            infrastructure/packer/output/SHA256SUMS
+            infrastructure/packer/output/install-network-agent.sh
+          retention-days: 7
+
+  test:
+    name: E2E Test
+    runs-on: self-hosted
+    needs: build
+    timeout-minutes: 60
+    env:
+      TEST_VMID: 999
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: appliance-${{ env.VERSION }}
+          path: ./artifacts
+
+      - name: Reassemble image
+        run: |
+          cd artifacts
+          VERSION_CLEAN="${VERSION#v}"
+
+          echo "Reassembling parts..."
+          cat network-agent-*.part-* > network-agent.qcow2.zst
+
+          echo "Verifying checksums..."
+          sha256sum -c SHA256SUMS
+
+          echo "Decompressing..."
+          zstd -d -f network-agent.qcow2.zst -o network-agent-test.qcow2
+
+          ls -lh network-agent-test.qcow2
+
+      - name: Create test VM
+        run: |
+          # Clean up any existing test VM
+          qm stop $TEST_VMID 2>/dev/null || true
+          qm destroy $TEST_VMID --purge 2>/dev/null || true
+
+          # Create VM
+          qm create $TEST_VMID \
+            --name "network-agent-test" \
+            --memory 32768 \
+            --cores 8 \
+            --cpu host \
+            --ostype l26 \
+            --agent enabled=1 \
+            --net0 virtio,bridge=vmbr0
+
+          # Import disk
+          qm importdisk $TEST_VMID artifacts/network-agent-test.qcow2 local-lvm --format qcow2
+
+          # Configure disk
+          DISK=$(pvesm list local-lvm | grep "vm-${TEST_VMID}-disk" | awk '{print $1}')
+          qm set $TEST_VMID --scsi0 "$DISK" --boot order=scsi0 --scsihw virtio-scsi-single
+
+          # Start VM
+          qm start $TEST_VMID
+
+      - name: Wait for boot and get IP
+        id: vm-ip
+        run: |
+          echo "Waiting for VM to boot and get IP..."
+          sleep 60
+
+          VM_IP=""
+          for i in {1..30}; do
+            VM_IP=$(qm guest cmd $TEST_VMID network-get-interfaces 2>/dev/null | \
+                    jq -r '.[1]["ip-addresses"][]? | select(.["ip-address-type"] == "ipv4") | .["ip-address"]' 2>/dev/null | head -1 || echo "")
+
+            if [[ -n "$VM_IP" && "$VM_IP" != "null" && "$VM_IP" != "127.0.0.1" ]]; then
+              echo "VM_IP=$VM_IP" >> $GITHUB_OUTPUT
+              echo "VM IP: $VM_IP"
+              break
+            fi
+            echo "Waiting for IP... ($i/30)"
+            sleep 10
+          done
+
+          if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
+            echo "ERROR: Failed to get VM IP after 5 minutes"
+            qm guest cmd $TEST_VMID network-get-interfaces || true
+            exit 1
+          fi
+
+      - name: Skip first-boot (test mode)
+        run: |
+          # In test mode, we skip the interactive first-boot
+          # Create .env with test values and mark as initialized
+          VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
+
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 root@$VM_IP << 'ENDSSH'
+            # Create test .env
+            cat > /opt/network-agent/.env << 'EOF'
+POSTGRES_USER=agent
+POSTGRES_PASSWORD=test-password-123
+BASIC_AUTH_USER=admin
+BASIC_AUTH_HASH=$2a$14$test.hash.for.testing.only
+VERSION=test
+EOF
+            chmod 600 /opt/network-agent/.env
+
+            # Mark as initialized
+            mkdir -p /var/lib/network-agent
+            touch /var/lib/network-agent/.initialized
+
+            # Start services
+            cd /opt/network-agent
+            docker compose up -d
+ENDSSH
+
+      - name: Wait for services
+        run: |
+          VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
+          echo "Waiting for services to start..."
+          sleep 120
+
+          # Check Docker status
+          ssh -o StrictHostKeyChecking=no root@$VM_IP "docker compose -f /opt/network-agent/docker-compose.yml ps"
+
+      - name: Run health checks
+        run: |
+          VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
+
+          echo "=== Checking Ollama ==="
+          if ssh -o StrictHostKeyChecking=no root@$VM_IP "docker exec ollama curl -sf http://localhost:11434/api/tags | grep -q qwen3"; then
+            echo "✓ Ollama model loaded"
+          else
+            echo "✗ Ollama model not found"
+            ssh -o StrictHostKeyChecking=no root@$VM_IP "docker logs ollama --tail 50" || true
+          fi
+
+          echo "=== Checking PostgreSQL ==="
+          if ssh -o StrictHostKeyChecking=no root@$VM_IP "docker exec postgres pg_isready -U agent"; then
+            echo "✓ PostgreSQL is ready"
+          else
+            echo "✗ PostgreSQL not ready"
+          fi
+
+          echo "=== Final service status ==="
+          ssh -o StrictHostKeyChecking=no root@$VM_IP "docker compose -f /opt/network-agent/docker-compose.yml ps"
+
+      - name: Cleanup test VM
+        if: always()
+        run: |
+          qm stop $TEST_VMID 2>/dev/null || true
+          sleep 5
+          qm destroy $TEST_VMID --purge 2>/dev/null || true
+
+  release:
+    name: Upload to Release
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: appliance-${{ github.ref_name }}
+          path: ./artifacts
+
+      - name: List artifacts
+        run: ls -lh artifacts/
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.part-*
+            artifacts/SHA256SUMS
+            artifacts/install-network-agent.sh
+          fail_on_unmatched_files: true
