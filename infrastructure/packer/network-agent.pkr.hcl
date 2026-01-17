@@ -151,16 +151,82 @@ build {
     ]
   }
 
-  # Run provisioning scripts
+  # Step 1: Base packages
+  provisioner "shell" {
+    inline = [
+      "apt-get update",
+      "apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release sudo vim-tiny htop jq zstd qemu-guest-agent",
+      "systemctl enable qemu-guest-agent"
+    ]
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
+  }
+
+  # Step 2: Docker CE from docker.com
+  provisioner "shell" {
+    inline = [
+      "install -m 0755 -d /etc/apt/keyrings",
+      "curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
+      "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable\" > /etc/apt/sources.list.d/docker.list",
+      "apt-get update",
+      "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+      "systemctl enable docker"
+    ]
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
+  }
+
+  # Step 3: Hostname & Network
+  provisioner "shell" {
+    inline = [
+      "echo 'network-agent' > /etc/hostname",
+      "cat > /etc/hosts << 'EOF'\n127.0.0.1   localhost\n127.0.1.1   network-agent\nEOF",
+      "cat > /etc/systemd/network/20-wired.network << 'EOF'\n[Match]\nName=ens18\n[Network]\nDHCP=yes\nEOF",
+      "systemctl enable systemd-networkd"
+    ]
+  }
+
+  # Step 4: SSH Hardening
+  provisioner "shell" {
+    inline = [
+      "cat > /etc/ssh/sshd_config.d/99-hardening.conf << 'EOF'\nPermitRootLogin prohibit-password\nPasswordAuthentication no\nPubkeyAuthentication yes\nAuthenticationMethods publickey\nX11Forwarding no\nAllowTcpForwarding no\nMaxAuthTries 3\nEOF"
+    ]
+  }
+
+  # Step 5: Kernel Tuning
+  provisioner "shell" {
+    inline = [
+      "cat > /etc/sysctl.d/99-network-agent.conf << 'EOF'\nnet.ipv4.ping_group_range = 0 65535\nfs.file-max = 1000000\nnet.core.somaxconn = 65535\nnet.ipv4.tcp_tw_reuse = 1\nnet.ipv4.tcp_fin_timeout = 15\nnet.core.rmem_max = 16777216\nnet.core.wmem_max = 16777216\nnet.ipv4.neigh.default.gc_thresh3 = 16384\nEOF",
+      "sysctl --system"
+    ]
+  }
+
+  # Step 6: User Limits
+  provisioner "shell" {
+    inline = [
+      "cat > /etc/security/limits.d/99-network-agent.conf << 'EOF'\n* soft nofile 1000000\n* hard nofile 1000000\nEOF"
+    ]
+  }
+
+  # Step 8: Pull Docker images for offline use
+  provisioner "shell" {
+    inline = [
+      "cd /opt/network-agent && docker compose pull"
+    ]
+  }
+
+  # Step 9: Systemd Service (disabled - enabled by first-boot)
+  provisioner "shell" {
+    inline = [
+      "cat > /etc/systemd/system/network-agent.service << 'EOF'\n[Unit]\nDescription=Network Agent Docker Compose Stack\nRequires=docker.service\nAfter=docker.service network-online.target\n\n[Service]\nType=oneshot\nRemainAfterExit=yes\nWorkingDirectory=/opt/network-agent\nExecStart=/usr/bin/docker compose up -d\nExecStop=/usr/bin/docker compose down\nTimeoutStartSec=300\n\n[Install]\nWantedBy=multi-user.target\nEOF",
+      "systemctl daemon-reload"
+    ]
+  }
+
+  # Run additional provisioning scripts
   provisioner "shell" {
     scripts = [
-      "scripts/01-base-setup.sh",
-      "scripts/02-pull-images.sh",
       "scripts/03-pull-ollama-model.sh",
-      "scripts/04-configure-compose.sh",
       "scripts/05-first-boot-setup.sh",
-      "scripts/06-configure-firewall.sh",
-      "scripts/99-cleanup.sh"
+      "scripts/06-configure-firewall.sh"
     ]
     environment_vars = [
       "DEBIAN_FRONTEND=noninteractive",
@@ -168,6 +234,24 @@ build {
       "OLLAMA_MODEL=${var.ollama_model}"
     ]
     execute_command = "chmod +x {{ .Path }}; {{ .Vars }} {{ .Path }}"
+  }
+
+  # Step 7: APT Offline + Step 10: Cleanup (must be last!)
+  provisioner "shell" {
+    inline = [
+      "# APT Offline",
+      "cp /etc/apt/sources.list /etc/apt/sources.list.backup 2>/dev/null || true",
+      "echo '# Disabled for offline mode' > /etc/apt/sources.list",
+      "mv /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.list.disabled",
+      "apt-get clean && rm -rf /var/lib/apt/lists/*",
+      "# Cleanup",
+      "journalctl --vacuum-time=1s",
+      "rm -rf /tmp/* /var/tmp/*",
+      "rm -f /etc/ssh/ssh_host_*",
+      "truncate -s 0 /etc/machine-id",
+      "dd if=/dev/zero of=/EMPTY bs=1M 2>/dev/null || true",
+      "rm -f /EMPTY"
+    ]
   }
 
   # No post-processor needed - qcow2 is our target format
