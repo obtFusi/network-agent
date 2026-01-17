@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
     environment:
       - LLM_BASE_URL=http://ollama:11434/v1
-      - LLM_MODEL=qwen3:30b
+      - LLM_MODEL=qwen3:30b-a3b
       - LLM_API_KEY=not-needed-for-ollama
       - DATABASE_URL=postgresql://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD}@postgres:5432/network_agent
     volumes:
@@ -41,7 +41,7 @@ services:
       start_period: 60s
 
   ollama:
-    image: ollama/ollama:0.5.4
+    image: ollama/ollama:0.14.1
     container_name: ollama
     hostname: ollama
     restart: unless-stopped
