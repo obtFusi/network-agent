@@ -29,14 +29,14 @@ variable "version" {
 variable "debian_iso_url" {
   type        = string
   description = "URL to Debian netinst ISO"
-  default     = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.9.0-amd64-netinst.iso"
+  default     = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.3.0-amd64-netinst.iso"
 }
 
 variable "debian_iso_checksum" {
   type        = string
   description = "SHA256 checksum of Debian ISO"
-  # Debian 12.9.0 amd64 netinst
-  default     = "sha256:1536d182c739e8b48102c9e76d0dc8cf3e1bb12c925a9f3c0c1d44fb35fef50a"
+  # Debian 13.3.0 (Trixie) amd64 netinst
+  default     = "sha256:c9f09d24b7e834e6834f2ffa565b33d6f1f540d04bd25c79ad9953bc79a8ac02"
 }
 
 variable "disk_size" {
