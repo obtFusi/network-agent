@@ -51,7 +51,7 @@
 # variable "memory" {
 #   type        = number
 #   description = "VM memory in MB (for build only)"
-#   default     = 6144
+#   default     = 8192
 # }
 # 
 # variable "cpus" {
