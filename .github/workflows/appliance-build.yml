@@ -347,3 +347,4 @@ ENDSSH
             artifacts/SHA256SUMS
             artifacts/install-network-agent.sh
           fail_on_unmatched_files: true
+
