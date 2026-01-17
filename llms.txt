@@ -1,0 +1,43 @@
+# Network Agent
+
+> KI-gesteuerter Netzwerk-Scanner mit LLM-Integration. Kombiniert nmap, masscan und andere Tools mit natürlicher Sprache.
+
+## Quick Start
+- [README.md](README.md): Installation, Usage, Docker, CLI Examples
+- [CHANGELOG.md](CHANGELOG.md): Version History
+
+## Core (Agent-Logik)
+- [cli.py](cli.py): Entry Point, REPL-Mode, `--serve` für HTTP API
+- [agent/core.py](agent/core.py): NetworkAgent Klasse, Session Memory, Tool-Execution
+- [agent/llm.py](agent/llm.py): LLM Client (OpenAI-kompatibel, Groq, Ollama)
+
+## Tools (Netzwerk-Scanning)
+- [tools/base.py](tools/base.py): Tool Base-Klasse, Registry
+- [tools/network/ping_sweep.py](tools/network/ping_sweep.py): Host-Discovery via nmap
+- [tools/network/port_scanner.py](tools/network/port_scanner.py): Port-Scanning
+- [tools/network/service_detect.py](tools/network/service_detect.py): Service/Version Detection
+- [tools/network/dns_lookup.py](tools/network/dns_lookup.py): DNS-Abfragen
+- [tools/web/web_search.py](tools/web/web_search.py): SearXNG Web-Suche
+
+## Configuration
+- [config/settings.yaml](config/settings.yaml): LLM-Provider, Tool-Settings
+- [config/prompts/system.md](config/prompts/system.md): System Prompt Template
+
+## HTTP API (ab v0.9)
+- [agent/api/](agent/api/): FastAPI Server (`python cli.py --serve`)
+
+## Tests
+- [tests/unit/](tests/unit/): Unit Tests (pytest)
+- [tests/conftest.py](tests/conftest.py): Test Fixtures
+
+## Infrastructure (Appliance)
+- [infrastructure/docker/](infrastructure/docker/): Docker Compose Stack
+- [infrastructure/packer/](infrastructure/packer/): Proxmox qcow2 Build
+- [docs/CICD.md](docs/CICD.md): CI/CD Pipeline Dokumentation
+
+## Compliance
+- [docs/compliance/](docs/compliance/): ISO 27001, NIS2, BSI IT-Grundschutz Mappings
+
+## Development
+- [.claude/CLAUDE.md](.claude/CLAUDE.md): Claude Code Projekt-Regeln
+- [.github/workflows/](./github/workflows/): CI (lint, test, security, docker)
