@@ -10,7 +10,7 @@ if [[ "${INCLUDE_MODEL:-true}" != "true" ]]; then
     exit 0
 fi
 
-MODEL="${OLLAMA_MODEL:-qwen3:30b-a3b}"
+MODEL="${OLLAMA_MODEL:-qwen3:30b}"
 echo "Model: $MODEL"
 
 # Create Docker volume for models
