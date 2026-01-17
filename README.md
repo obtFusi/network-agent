@@ -2,6 +2,8 @@
 
 [![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](CHANGELOG.md)
 
+> **Für Entwickler:** [CI/CD-Dokumentation](docs/CICD.md) - Pipeline, GitHub Actions, Claude Code Skills
+
 Ein KI-gesteuerter Netzwerk-Scanner. Statt komplizierte Terminal-Befehle zu lernen, stellst du einfach Fragen wie *"Welche Geräte sind in meinem Netzwerk?"* - der Agent erledigt den Rest.
 
 ## Breaking Change in v0.7.0
@@ -193,6 +195,91 @@ docker run -it --rm --env-file .env network-agent:latest
 ```
 
 > **Hinweis:** Docker Compose startet automatisch SearXNG für Web-Suchen. Ohne `--network host` ist der LAN-Scan eingeschränkt.
+
+### Alternative: Proxmox Appliance
+
+Für eine schlüsselfertige Lösung gibt es eine vorkonfigurierte **Proxmox VM** mit allem vorinstalliert:
+
+<details>
+<summary><strong>One-Click Installation auf Proxmox</strong></summary>
+
+**Was ist enthalten?**
+- Network Agent (vorinstalliert)
+- Ollama mit Qwen3 30B-A3B (20GB lokales LLM, kein API-Key nötig)
+- Caddy Reverse Proxy (HTTPS + Basic Auth)
+- PostgreSQL (Datenbank)
+- Offline-fähig (keine externen Dependencies zur Laufzeit)
+
+**Systemanforderungen:**
+- 24-32 GB RAM (LLM benötigt ~20 GB)
+- 4-8 CPU Cores
+- 100 GB Disk
+- Proxmox VE 8.x
+
+**Installation (One-Click):**
+
+```bash
+# Auf dem Proxmox-Host ausführen:
+curl -sSL https://github.com/obtFusi/network-agent/releases/latest/download/install-network-agent.sh | bash -s -- 200
+
+# Oder mit benutzerdefiniertem Storage:
+curl -sSL ... | bash -s -- 200 ceph-pool
+```
+
+Das Script:
+1. Lädt das Image (~8GB komprimiert)
+2. Verifiziert SHA256 Checksums
+3. Dekomprimiert zu ~22GB qcow2
+4. Erstellt VM 200 mit optimalen Einstellungen
+5. Ready to start!
+
+**Manueller Download:**
+
+```bash
+# Parts herunterladen
+wget https://github.com/obtFusi/network-agent/releases/latest/download/network-agent-0.4.0.qcow2.zst.part-aa
+wget https://github.com/obtFusi/network-agent/releases/latest/download/network-agent-0.4.0.qcow2.zst.part-ab
+# ... (5 Parts total)
+
+# Zusammenfügen und dekomprimieren
+cat network-agent-*.part-* | zstd -d -o network-agent.qcow2
+
+# VM erstellen
+qm create 200 --name network-agent --memory 32768 --cores 8 --cpu host
+qm importdisk 200 network-agent.qcow2 local-lvm --format qcow2
+qm set 200 --scsi0 local-lvm:vm-200-disk-0 --boot order=scsi0
+```
+
+**Erster Start:**
+
+```bash
+qm start 200
+qm terminal 200
+```
+
+Beim ersten Login:
+1. Neues Root-Passwort setzen (Pflicht!)
+2. Web-Credentials werden generiert und angezeigt
+3. Services starten automatisch
+
+**Zugriff:**
+- Web UI: `https://<VM-IP>` (Credentials aus First-Boot)
+- SSH: `ssh root@<VM-IP>`
+
+**Scan-Modus (Host-Network für L2/L3):**
+
+```bash
+ssh root@<VM-IP>
+cd /opt/network-agent
+docker compose down
+docker compose -f docker-compose.yml -f docker-compose.scan-mode.yml up -d
+```
+
+**Ports:**
+- 443: HTTPS Web Interface (Caddy)
+- 22: SSH
+
+</details>
 
 ## Verwendung
 
