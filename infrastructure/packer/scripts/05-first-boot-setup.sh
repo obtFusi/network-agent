@@ -99,10 +99,12 @@ ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
 EOF
 
 # Run first-boot on login (as fallback if systemd service doesn't trigger)
+# Only run on interactive TTY sessions (not SSH provisioning)
 cat >> /root/.bashrc << 'EOF'
 
 # Network Agent first-boot check
-if [[ ! -f /var/lib/network-agent/.initialized ]]; then
+# Only run on real TTY (tty1), not SSH sessions or Packer provisioning
+if [[ ! -f /var/lib/network-agent/.initialized ]] && [[ $(tty) == /dev/tty1 ]]; then
     /opt/network-agent/first-boot.sh
 fi
 EOF
