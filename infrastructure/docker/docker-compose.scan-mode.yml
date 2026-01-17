@@ -13,6 +13,9 @@
 services:
   net-agent:
     network_mode: host
+    # network_mode: host is mutually exclusive with networks
+    # Use !reset to remove the base config's network assignment (Compose Spec v2.x)
+    networks: !reset []
     environment:
       # Override service URLs for host mode
       - LLM_BASE_URL=http://127.0.0.1:11434/v1
