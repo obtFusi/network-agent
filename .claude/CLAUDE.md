@@ -409,11 +409,25 @@ MANUELLER BUILD (Debugging, Test ohne Release)
 
 | Info | Wert |
 |------|------|
-| Host | `build-runner.example.invalid` (Proxmox LXC) |
+| Runner | `build-runner.example.invalid` (Proxmox LXC Container) |
+| Proxmox Host | `10.0.0.69` (für qm Befehle via SSH) |
+| SSH Key | `/root/.ssh/id_ed25519` auf Runner → Proxmox |
 | Status | `ssh "${RUNNER_SSH:?Set RUNNER_SSH}" systemctl status github-runner` |
 | Logs | `ssh "${RUNNER_SSH:?Set RUNNER_SSH}" journalctl -u github-runner -f` |
 | Disk | 80GB, nach Build ~40GB frei (zstd + E2E Test) |
 | Cleanup | `ssh "${RUNNER_SSH:?Set RUNNER_SSH}" fstrim -v /` (nach Build) |
+
+**E2E Test Architektur:**
+```
+GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
+       │                            │
+       │                            └─ qm create/start/destroy
+       │                            └─ VM erstellen aus qcow2
+       │
+       └──SSH──> Test-VM (DHCP IP)
+                     └─ Health Checks
+                     └─ Docker Compose Status
+```
 
 **Appliance Build Phasen (~50 min gesamt):**
 1. Validate Templates (ubuntu-latest, ~20s)
