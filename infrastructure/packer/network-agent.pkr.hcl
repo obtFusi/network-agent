@@ -112,8 +112,9 @@
 #   ssh_timeout      = "30m"
 #   ssh_port         = 22
 # 
-#   # Shutdown
-#   shutdown_command = "shutdown -P now"
+#   # Shutdown handled by cleanup provisioner (with expect_disconnect)
+#   # Empty command since VM shuts down before Packer can send it
+#   shutdown_command = ""
 # 
 #   # Headless build
 #   headless = true
@@ -267,6 +268,8 @@
 #   }
 # 
 #   # Step 7: APT Offline + Step 10: Cleanup (must be last!)
+#   # Note: shutdown is called here, not via Packer's shutdown_command,
+#   # because the cleanup deletes SSH host keys which breaks the connection.
 #   provisioner "shell" {
 #     inline = [
 #       "# APT Offline",
@@ -279,9 +282,14 @@
 #       "rm -rf /tmp/* /var/tmp/*",
 #       "rm -f /etc/ssh/ssh_host_*",
 #       "truncate -s 0 /etc/machine-id",
-#       "dd if=/dev/zero of=/EMPTY bs=1M 2>/dev/null || true",
-#       "rm -f /EMPTY"
+#       "# Zero free space for better compression (limit to 5GB to avoid timeout)",
+#       "dd if=/dev/zero of=/EMPTY bs=1M count=5120 2>/dev/null || true",
+#       "rm -f /EMPTY",
+#       "sync",
+#       "# Shutdown immediately (Packer will wait for QEMU to exit)",
+#       "shutdown -P now"
 #     ]
+#     expect_disconnect = true
 #   }
 # 
 #   # No post-processor needed - qcow2 is our target format
