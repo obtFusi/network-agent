@@ -204,41 +204,52 @@ jobs:
 
       - name: Create test VM
         if: ${{ inputs.skip_test != true }}
+        env:
+          PVE_HOST: 10.0.0.69
         run: |
-          # Clean up any existing test VM
-          qm stop $TEST_VMID 2>/dev/null || true
-          qm destroy $TEST_VMID --purge 2>/dev/null || true
+          # Copy qcow2 to Proxmox host
+          echo "Copying qcow2 to Proxmox host..."
+          scp -o StrictHostKeyChecking=no test/network-agent-test.qcow2 root@$PVE_HOST:/tmp/
 
-          # Create VM
-          qm create $TEST_VMID \
-            --name "network-agent-test" \
+          # Clean up any existing test VM
+          ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
+          ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
+
+          # Create VM on Proxmox host
+          ssh root@$PVE_HOST "qm create $TEST_VMID \
+            --name 'network-agent-test' \
             --memory 32768 \
             --cores 8 \
             --cpu host \
             --ostype l26 \
             --agent enabled=1 \
-            --net0 virtio,bridge=vmbr0
+            --net0 virtio,bridge=vmbr0"
 
           # Import disk
-          qm importdisk $TEST_VMID test/network-agent-test.qcow2 local-lvm --format qcow2
+          ssh root@$PVE_HOST "qm importdisk $TEST_VMID /tmp/network-agent-test.qcow2 local-lvm --format qcow2"
 
           # Configure disk
-          DISK=$(pvesm list local-lvm | grep "vm-${TEST_VMID}-disk" | awk '{print $1}')
-          qm set $TEST_VMID --scsi0 "$DISK" --boot order=scsi0 --scsihw virtio-scsi-single
+          ssh root@$PVE_HOST "DISK=\$(pvesm list local-lvm | grep 'vm-${TEST_VMID}-disk' | awk '{print \$1}') && \
+            qm set $TEST_VMID --scsi0 \"\$DISK\" --boot order=scsi0 --scsihw virtio-scsi-single"
 
           # Start VM
-          qm start $TEST_VMID
+          ssh root@$PVE_HOST "qm start $TEST_VMID"
+
+          # Cleanup temp file on Proxmox
+          ssh root@$PVE_HOST "rm -f /tmp/network-agent-test.qcow2"
 
       - name: Wait for boot and get IP
         if: ${{ inputs.skip_test != true }}
         id: vm-ip
+        env:
+          PVE_HOST: 10.0.0.69
         run: |
           echo "Waiting for VM to boot..."
           sleep 60
 
           VM_IP=""
           for i in {1..30}; do
-            VM_IP=$(qm guest cmd $TEST_VMID network-get-interfaces 2>/dev/null | \
+            VM_IP=$(ssh root@$PVE_HOST "qm guest cmd $TEST_VMID network-get-interfaces" 2>/dev/null | \
                     jq -r '.[1]["ip-addresses"][]? | select(.["ip-address-type"] == "ipv4") | .["ip-address"]' 2>/dev/null | head -1 || echo "")
 
             if [[ -n "$VM_IP" && "$VM_IP" != "null" && "$VM_IP" != "127.0.0.1" ]]; then
@@ -252,7 +263,7 @@ jobs:
 
           if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
             echo "ERROR: Failed to get VM IP"
-            qm guest cmd $TEST_VMID network-get-interfaces || true
+            ssh root@$PVE_HOST "qm guest cmd $TEST_VMID network-get-interfaces" || true
             exit 1
           fi
 
@@ -311,10 +322,12 @@ jobs:
 
       - name: Cleanup test VM
         if: always()
+        env:
+          PVE_HOST: 10.0.0.69
         run: |
-          qm stop $TEST_VMID 2>/dev/null || true
+          ssh root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           sleep 5
-          qm destroy $TEST_VMID --purge 2>/dev/null || true
+          ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
           rm -rf test/
 
       # ═══════════════════════════════════════════════════════════
