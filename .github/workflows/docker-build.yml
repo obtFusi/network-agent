@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/docker-build.yml'
       - 'Dockerfile'
       - 'cli.py'
       - 'agent/**'
