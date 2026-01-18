@@ -189,28 +189,17 @@ jobs:
           ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
 
-          # Copy parts to Proxmox and reassemble there (saves runner disk space)
-          echo "Copying parts to Proxmox host..."
-          scp -o StrictHostKeyChecking=no infrastructure/packer/output/*.part-* root@$PVE_HOST:/tmp/
-          scp infrastructure/packer/output/SHA256SUMS root@$PVE_HOST:/tmp/
+          # Stream decompressed image directly to Proxmox (no temp files on runner)
+          # Decompression on runner, only final qcow2 (32GB) goes over network
+          BUILD_TMP="/root/build-tmp"
+          ssh -o StrictHostKeyChecking=no root@$PVE_HOST "mkdir -p $BUILD_TMP"
 
-          echo "Reassembling and decompressing on Proxmox..."
-          ssh root@$PVE_HOST bash << 'REMOTE_EOF'
-            cd /tmp
+          echo "Streaming decompressed image to Proxmox..."
+          cd infrastructure/packer/output
+          cat *.part-* | zstd -d | ssh root@$PVE_HOST "cat > $BUILD_TMP/network-agent-test.qcow2"
 
-            echo "Verifying checksums..."
-            sha256sum -c SHA256SUMS
-
-            echo "Reassembling parts..."
-            cat network-agent-*.part-* > network-agent.qcow2.zst
-            rm -f network-agent-*.part-* SHA256SUMS
-
-            echo "Decompressing..."
-            zstd -d -f network-agent.qcow2.zst -o network-agent-test.qcow2
-            rm -f network-agent.qcow2.zst
-
-            ls -lh network-agent-test.qcow2
-          REMOTE_EOF
+          echo "Verifying image on Proxmox..."
+          ssh root@$PVE_HOST "ls -lh $BUILD_TMP/network-agent-test.qcow2"
 
           # Create VM on Proxmox host
           ssh root@$PVE_HOST "qm create $TEST_VMID \
@@ -223,7 +212,7 @@ jobs:
             --net0 virtio,bridge=vmbr0"
 
           # Import disk
-          ssh root@$PVE_HOST "qm importdisk $TEST_VMID /tmp/network-agent-test.qcow2 local-lvm --format qcow2"
+          ssh root@$PVE_HOST "qm importdisk $TEST_VMID $BUILD_TMP/network-agent-test.qcow2 local-lvm --format qcow2"
 
           # Configure disk
           ssh root@$PVE_HOST "DISK=\$(pvesm list local-lvm | grep 'vm-${TEST_VMID}-disk' | awk '{print \$1}') && \
@@ -233,7 +222,7 @@ jobs:
           ssh root@$PVE_HOST "qm start $TEST_VMID"
 
           # Cleanup temp file on Proxmox
-          ssh root@$PVE_HOST "rm -f /tmp/network-agent-test.qcow2"
+          ssh root@$PVE_HOST "rm -f $BUILD_TMP/network-agent-test.qcow2"
 
       - name: Wait for boot and get IP
         if: ${{ inputs.skip_test != true }}
@@ -370,7 +359,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
           # Cleanup temp files on Proxmox
-          ssh root@$PVE_HOST "rm -f /tmp/network-agent-*.part-* /tmp/network-agent*.qcow2* /tmp/SHA256SUMS 2>/dev/null || true"
+          ssh root@$PVE_HOST "rm -rf /root/build-tmp/network-agent*.qcow2* 2>/dev/null || true"
           # Cleanup local build artifacts
           rm -rf infrastructure/packer/output/ || true
           # Reclaim disk space
