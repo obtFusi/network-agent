@@ -180,12 +180,18 @@ build {
     environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
   }
 
-  # Step 3: Hostname & Network
+  # Step 3: Hostname & Network (systemd-networkd replaces ifupdown)
   provisioner "shell" {
     inline = [
       "echo 'network-agent' > /etc/hostname",
       "cat > /etc/hosts << 'EOF'\n127.0.0.1   localhost\n127.0.1.1   network-agent\nEOF",
-      "cat > /etc/systemd/network/20-wired.network << 'EOF'\n[Match]\nName=en*\n[Network]\nDHCP=yes\nEOF",
+      "# Disable ifupdown (conflicts with systemd-networkd)",
+      "mv /etc/network/interfaces /etc/network/interfaces.save 2>/dev/null || true",
+      "mv /etc/network/interfaces.d /etc/network/interfaces.d.save 2>/dev/null || true",
+      "systemctl disable networking.service 2>/dev/null || true",
+      "# Configure systemd-networkd for DHCP on all ethernet interfaces",
+      "mkdir -p /etc/systemd/network",
+      "cat > /etc/systemd/network/20-wired.network << 'EOF'\n[Match]\nName=en*\nType=ether\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\nEOF",
       "systemctl enable systemd-networkd"
     ]
   }
