@@ -8,10 +8,7 @@
 
 services:
   net-agent:
-    build:
-      context: .  # Appliance: source code copied to same directory
-      dockerfile: net-agent/Dockerfile
-    image: network-agent:${VERSION:-latest}
+    image: ghcr.io/obtfusi/network-agent:${VERSION:-latest}
     container_name: net-agent
     hostname: net-agent
     restart: unless-stopped
