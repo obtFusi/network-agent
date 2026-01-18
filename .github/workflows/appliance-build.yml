@@ -284,6 +284,16 @@ jobs:
             exit 1
           fi
 
+          # Inject runner's SSH key into VM (SSH hardening requires key auth)
+          echo "Injecting SSH key for E2E testing..."
+          RUNNER_PUBKEY=$(ssh-keygen -y -f ~/.ssh/id_ed25519 2>/dev/null || cat ~/.ssh/id_ed25519.pub 2>/dev/null || echo "")
+          if [[ -n "$RUNNER_PUBKEY" ]]; then
+            ssh root@$PVE_HOST "qm guest exec $TEST_VMID -- bash -c 'mkdir -p /root/.ssh && chmod 700 /root/.ssh && echo \"$RUNNER_PUBKEY\" >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'"
+            echo "SSH key injected successfully"
+          else
+            echo "WARNING: No SSH key found, SSH may fail"
+          fi
+
       - name: Configure and start services
         if: ${{ inputs.skip_test != true }}
         run: |
