@@ -133,36 +133,15 @@ build {
   name    = "network-agent"
   sources = ["source.qemu.network-agent"]
 
-  # Create target directories first (file provisioner cannot create directories)
+  # Create target directory
   provisioner "shell" {
-    inline = ["mkdir -p /opt/network-agent/agent /opt/network-agent/tools /opt/network-agent/config"]
+    inline = ["mkdir -p /opt/network-agent"]
   }
 
-  # Copy Docker Compose files
+  # Copy Docker Compose files and configs
   provisioner "file" {
     source      = "../docker/"
     destination = "/opt/network-agent/"
-  }
-
-  # Copy source code for Docker build
-  provisioner "file" {
-    source      = "../../cli.py"
-    destination = "/opt/network-agent/cli.py"
-  }
-
-  provisioner "file" {
-    source      = "../../requirements.txt"
-    destination = "/opt/network-agent/requirements.txt"
-  }
-
-  provisioner "file" {
-    source      = "../../agent/"
-    destination = "/opt/network-agent/agent/"
-  }
-
-  provisioner "file" {
-    source      = "../../tools/"
-    destination = "/opt/network-agent/tools/"
   }
 
   # Copy first-boot script
@@ -233,11 +212,10 @@ build {
     ]
   }
 
-  # Step 8: Build and pull Docker images for offline use
+  # Step 8: Pull Docker images from ghcr.io for offline use
   provisioner "shell" {
     inline = [
-      "cd /opt/network-agent && docker compose build",
-      "cd /opt/network-agent && docker compose pull --ignore-buildable"
+      "cd /opt/network-agent && VERSION=${var.version} docker compose pull"
     ]
   }
 
