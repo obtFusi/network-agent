@@ -7,6 +7,10 @@ on:
         description: 'Version (e.g., 0.4.0)'
         required: true
         type: string
+      skip_test:
+        description: 'Skip E2E test (for debugging)'
+        type: boolean
+        default: false
   release:
     types: [published]
 
@@ -16,6 +20,7 @@ concurrency:
 
 env:
   PACKER_VERSION: "1.11.0"
+  TEST_VMID: 999
 
 jobs:
   validate:
@@ -50,11 +55,11 @@ jobs:
           docker compose -f infrastructure/docker/docker-compose.yml \
                         -f infrastructure/docker/docker-compose.online.yml config --quiet
 
-  build:
-    name: Build qcow2 Image
+  build-and-test:
+    name: Build and Test
     runs-on: self-hosted
     needs: validate
-    timeout-minutes: 240
+    timeout-minutes: 120
     env:
       VERSION: ${{ inputs.version || github.ref_name }}
     steps:
@@ -79,7 +84,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Install required tools for self-hosted runner
           sudo apt-get update
           sudo apt-get install -y unzip zstd qemu-utils
 
@@ -100,15 +104,15 @@ jobs:
         working-directory: infrastructure/packer
         run: packer init .
 
+      # ═══════════════════════════════════════════════════════════
+      # BUILD PHASE
+      # ═══════════════════════════════════════════════════════════
+
       - name: Build qcow2 Image
         working-directory: infrastructure/packer
         run: |
-          # Strip 'v' prefix from version if present
           VERSION_CLEAN="${VERSION#v}"
           echo "Building version: $VERSION_CLEAN"
-
-          # -on-error=abort keeps output if Packer can't clean up after VM shutdown
-          # || true: Build succeeds even if SSH disconnects during shutdown
           packer build \
             -var "version=${VERSION_CLEAN}" \
             -on-error=abort \
@@ -132,10 +136,8 @@ jobs:
           echo "Compressed size:"
           ls -lh *.zst
 
-          # Delete original qcow2 to free disk space before splitting
           echo "Removing original qcow2 to free space..."
           rm -f *.qcow2
-          echo "Disk space after cleanup:"
           df -h .
 
       - name: Split into parts
@@ -150,16 +152,13 @@ jobs:
           for f in *.part-[0-9][0-9]; do
             if [[ -f "$f" ]]; then
               num="${f##*.part-}"
-              # Convert 00->aa, 01->ab, etc.
               first=$(printf "\\x$(printf '%02x' $((97 + 10#$num / 26)))")
               second=$(printf "\\x$(printf '%02x' $((97 + 10#$num % 26)))")
               mv "$f" "${f%.part-*}.part-${first}${second}"
             fi
           done
 
-          # Remove the unsplit compressed file
           rm -f "network-agent-${VERSION_CLEAN}.qcow2.zst"
-
           echo "Parts created:"
           ls -lh *.part-*
 
@@ -167,46 +166,29 @@ jobs:
         run: |
           cd infrastructure/packer/output
           sha256sum *.part-* > SHA256SUMS
-          echo "Checksums:"
           cat SHA256SUMS
 
       - name: Copy install script
         run: |
           VERSION_CLEAN="${VERSION#v}"
           cp infrastructure/scripts/install-network-agent.sh infrastructure/packer/output/
-          # Update version in script
           sed -i "s/VERSION:-0.4.0/VERSION:-${VERSION_CLEAN}/" infrastructure/packer/output/install-network-agent.sh
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: appliance-${{ env.VERSION }}
-          path: |
-            infrastructure/packer/output/*.part-*
-            infrastructure/packer/output/SHA256SUMS
-            infrastructure/packer/output/install-network-agent.sh
-          retention-days: 7
+      # ═══════════════════════════════════════════════════════════
+      # E2E TEST PHASE (uses local files, no download needed)
+      # ═══════════════════════════════════════════════════════════
 
-  test:
-    name: E2E Test
-    runs-on: self-hosted
-    needs: build
-    timeout-minutes: 60
-    env:
-      TEST_VMID: 999
-      VERSION: ${{ inputs.version || github.ref_name }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: appliance-${{ env.VERSION }}
-          path: ./artifacts
-
-      - name: Reassemble image
+      - name: Prepare test directory
+        if: ${{ inputs.skip_test != true }}
         run: |
-          cd artifacts
+          mkdir -p test
+          cp infrastructure/packer/output/*.part-* test/
+          cp infrastructure/packer/output/SHA256SUMS test/
+
+      - name: Reassemble image (simulates user download)
+        if: ${{ inputs.skip_test != true }}
+        run: |
+          cd test
           VERSION_CLEAN="${VERSION#v}"
 
           echo "Reassembling parts..."
@@ -221,6 +203,7 @@ jobs:
           ls -lh network-agent-test.qcow2
 
       - name: Create test VM
+        if: ${{ inputs.skip_test != true }}
         run: |
           # Clean up any existing test VM
           qm stop $TEST_VMID 2>/dev/null || true
@@ -237,7 +220,7 @@ jobs:
             --net0 virtio,bridge=vmbr0
 
           # Import disk
-          qm importdisk $TEST_VMID artifacts/network-agent-test.qcow2 local-lvm --format qcow2
+          qm importdisk $TEST_VMID test/network-agent-test.qcow2 local-lvm --format qcow2
 
           # Configure disk
           DISK=$(pvesm list local-lvm | grep "vm-${TEST_VMID}-disk" | awk '{print $1}')
@@ -247,9 +230,10 @@ jobs:
           qm start $TEST_VMID
 
       - name: Wait for boot and get IP
+        if: ${{ inputs.skip_test != true }}
         id: vm-ip
         run: |
-          echo "Waiting for VM to boot and get IP..."
+          echo "Waiting for VM to boot..."
           sleep 60
 
           VM_IP=""
@@ -267,19 +251,17 @@ jobs:
           done
 
           if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
-            echo "ERROR: Failed to get VM IP after 5 minutes"
+            echo "ERROR: Failed to get VM IP"
             qm guest cmd $TEST_VMID network-get-interfaces || true
             exit 1
           fi
 
-      - name: Skip first-boot (test mode)
+      - name: Configure and start services
+        if: ${{ inputs.skip_test != true }}
         run: |
-          # In test mode, we skip the interactive first-boot
-          # Create .env with test values and mark as initialized
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 root@$VM_IP bash << 'EOF'
-            # Create test .env using printf to avoid YAML parsing issues
             printf '%s\n' \
               'POSTGRES_USER=agent' \
               'POSTGRES_PASSWORD=test-password-123' \
@@ -289,25 +271,23 @@ jobs:
               > /opt/network-agent/.env
             chmod 600 /opt/network-agent/.env
 
-            # Mark as initialized
             mkdir -p /var/lib/network-agent
             touch /var/lib/network-agent/.initialized
 
-            # Start services
             cd /opt/network-agent
             docker compose up -d
           EOF
 
       - name: Wait for services
+        if: ${{ inputs.skip_test != true }}
         run: |
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
-          echo "Waiting for services to start..."
+          echo "Waiting for services..."
           sleep 120
-
-          # Check Docker status
           ssh -o StrictHostKeyChecking=no root@$VM_IP "docker compose -f /opt/network-agent/docker-compose.yml ps"
 
       - name: Run health checks
+        if: ${{ inputs.skip_test != true }}
         run: |
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
@@ -326,7 +306,7 @@ jobs:
             echo "✗ PostgreSQL not ready"
           fi
 
-          echo "=== Final service status ==="
+          echo "=== Final status ==="
           ssh -o StrictHostKeyChecking=no root@$VM_IP "docker compose -f /opt/network-agent/docker-compose.yml ps"
 
       - name: Cleanup test VM
@@ -335,11 +315,26 @@ jobs:
           qm stop $TEST_VMID 2>/dev/null || true
           sleep 5
           qm destroy $TEST_VMID --purge 2>/dev/null || true
+          rm -rf test/
+
+      # ═══════════════════════════════════════════════════════════
+      # UPLOAD (only after successful test)
+      # ═══════════════════════════════════════════════════════════
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: appliance-${{ env.VERSION }}
+          path: |
+            infrastructure/packer/output/*.part-*
+            infrastructure/packer/output/SHA256SUMS
+            infrastructure/packer/output/install-network-agent.sh
+          retention-days: 7
 
   release:
     name: Upload to Release
     runs-on: ubuntu-latest
-    needs: test
+    needs: build-and-test
     if: github.event_name == 'release'
     permissions:
       contents: write
@@ -350,9 +345,6 @@ jobs:
           name: appliance-${{ github.ref_name }}
           path: ./artifacts
 
-      - name: List artifacts
-        run: ls -lh artifacts/
-
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
@@ -361,4 +353,3 @@ jobs:
             artifacts/SHA256SUMS
             artifacts/install-network-agent.sh
           fail_on_unmatched_files: true
-
