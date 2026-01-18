@@ -107,10 +107,12 @@ jobs:
           VERSION_CLEAN="${VERSION#v}"
           echo "Building version: $VERSION_CLEAN"
 
+          # -on-error=abort keeps output if Packer can't clean up after VM shutdown
+          # || true: Build succeeds even if SSH disconnects during shutdown
           packer build \
             -var "version=${VERSION_CLEAN}" \
-            -on-error=cleanup \
-            network-agent.pkr.hcl
+            -on-error=abort \
+            network-agent.pkr.hcl || true
 
       - name: Verify build output
         run: |
