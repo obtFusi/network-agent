@@ -341,7 +341,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no root@$VM_IP "docker compose -f /opt/network-agent/docker-compose.yml ps"
 
       - name: Cleanup test VM
-        if: always()
+        # Only cleanup on success - keep VM for debugging on failure
+        if: success()
         env:
           PVE_HOST: 10.0.0.69
         run: |
