@@ -178,42 +178,39 @@ jobs:
       # E2E TEST PHASE (uses local files, no download needed)
       # ═══════════════════════════════════════════════════════════
 
-      - name: Prepare test directory
-        if: ${{ inputs.skip_test != true }}
-        run: |
-          mkdir -p test
-          cp infrastructure/packer/output/*.part-* test/
-          cp infrastructure/packer/output/SHA256SUMS test/
-
-      - name: Reassemble image (simulates user download)
-        if: ${{ inputs.skip_test != true }}
-        run: |
-          cd test
-          VERSION_CLEAN="${VERSION#v}"
-
-          echo "Reassembling parts..."
-          cat network-agent-*.part-* > network-agent.qcow2.zst
-
-          echo "Verifying checksums..."
-          sha256sum -c SHA256SUMS
-
-          echo "Decompressing..."
-          zstd -d -f network-agent.qcow2.zst -o network-agent-test.qcow2
-
-          ls -lh network-agent-test.qcow2
-
       - name: Create test VM
         if: ${{ inputs.skip_test != true }}
         env:
           PVE_HOST: 10.0.0.69
         run: |
-          # Copy qcow2 to Proxmox host
-          echo "Copying qcow2 to Proxmox host..."
-          scp -o StrictHostKeyChecking=no test/network-agent-test.qcow2 root@$PVE_HOST:/tmp/
+          VERSION_CLEAN="${VERSION#v}"
 
-          # Clean up any existing test VM
+          # Clean up any existing test VM first
           ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
+
+          # Copy parts to Proxmox and reassemble there (saves runner disk space)
+          echo "Copying parts to Proxmox host..."
+          scp -o StrictHostKeyChecking=no infrastructure/packer/output/*.part-* root@$PVE_HOST:/tmp/
+          scp infrastructure/packer/output/SHA256SUMS root@$PVE_HOST:/tmp/
+
+          echo "Reassembling and decompressing on Proxmox..."
+          ssh root@$PVE_HOST bash << 'REMOTE_EOF'
+            cd /tmp
+
+            echo "Verifying checksums..."
+            sha256sum -c SHA256SUMS
+
+            echo "Reassembling parts..."
+            cat network-agent-*.part-* > network-agent.qcow2.zst
+            rm -f network-agent-*.part-* SHA256SUMS
+
+            echo "Decompressing..."
+            zstd -d -f network-agent.qcow2.zst -o network-agent-test.qcow2
+            rm -f network-agent.qcow2.zst
+
+            ls -lh network-agent-test.qcow2
+          REMOTE_EOF
 
           # Create VM on Proxmox host
           ssh root@$PVE_HOST "qm create $TEST_VMID \
@@ -349,7 +346,26 @@ jobs:
           ssh root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           sleep 5
           ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
-          rm -rf test/
+
+          # Reclaim disk space on runner (thin provisioned storage)
+          echo "Running fstrim to reclaim disk space..."
+          sudo fstrim -av || true
+
+      - name: Cleanup on failure
+        if: failure()
+        env:
+          PVE_HOST: 10.0.0.69
+        run: |
+          # Cleanup test VM if it exists
+          ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
+          ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
+          # Cleanup temp files on Proxmox
+          ssh root@$PVE_HOST "rm -f /tmp/network-agent-*.part-* /tmp/network-agent*.qcow2* /tmp/SHA256SUMS 2>/dev/null || true"
+          # Cleanup local build artifacts
+          rm -rf infrastructure/packer/output/ || true
+          # Reclaim disk space
+          sudo fstrim -av || true
+          echo "Cleanup completed after failure"
 
       # ═══════════════════════════════════════════════════════════
       # UPLOAD (only after successful test)
