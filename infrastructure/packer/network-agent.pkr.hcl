@@ -192,7 +192,20 @@ build {
       "# Configure systemd-networkd for DHCP on all ethernet interfaces",
       "mkdir -p /etc/systemd/network",
       "cat > /etc/systemd/network/20-wired.network << 'EOF'\n[Match]\nName=en*\nType=ether\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\nEOF",
-      "systemctl enable systemd-networkd"
+      "systemctl enable systemd-networkd",
+      "# DEBUG: Verify network configuration",
+      "echo '=== DEBUG: Network Config Status ==='",
+      "echo '--- /etc/systemd/network/ contents ---'",
+      "ls -la /etc/systemd/network/",
+      "echo '--- 20-wired.network content ---'",
+      "cat /etc/systemd/network/20-wired.network",
+      "echo '--- systemd-networkd status ---'",
+      "systemctl is-enabled systemd-networkd || true",
+      "echo '--- networking.service status ---'",
+      "systemctl is-enabled networking.service || true",
+      "echo '--- /etc/network/interfaces ---'",
+      "cat /etc/network/interfaces 2>/dev/null || echo 'File not found (good!)'",
+      "echo '=== END DEBUG ==='"
     ]
   }
 
