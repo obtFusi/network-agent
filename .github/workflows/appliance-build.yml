@@ -126,11 +126,17 @@ jobs:
           cd infrastructure/packer/output
           VERSION_CLEAN="${VERSION#v}"
 
-          echo "Compressing with zstd (level 19)..."
-          zstd -19 --long=31 -T0 -v *.qcow2 -o "network-agent-${VERSION_CLEAN}.qcow2.zst"
+          echo "Compressing with zstd (fast mode)..."
+          zstd -1 -T0 -v *.qcow2 -o "network-agent-${VERSION_CLEAN}.qcow2.zst"
 
           echo "Compressed size:"
           ls -lh *.zst
+
+          # Delete original qcow2 to free disk space before splitting
+          echo "Removing original qcow2 to free space..."
+          rm -f *.qcow2
+          echo "Disk space after cleanup:"
+          df -h .
 
       - name: Split into parts
         run: |
