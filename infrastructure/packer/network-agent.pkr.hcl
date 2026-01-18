@@ -274,15 +274,15 @@ build {
       "apt-get clean && rm -rf /var/lib/apt/lists/*",
       "# Cleanup",
       "journalctl --vacuum-time=1s",
-      "rm -rf /tmp/* /var/tmp/*",
+      "rm -rf /var/tmp/*",
       "rm -f /etc/ssh/ssh_host_*",
       "truncate -s 0 /etc/machine-id",
       "# Zero free space for better compression (limit to 5GB to avoid timeout)",
       "dd if=/dev/zero of=/EMPTY bs=1M count=5120 2>/dev/null || true",
       "rm -f /EMPTY",
       "sync",
-      "# Shutdown immediately (Packer will wait for QEMU to exit)",
-      "shutdown -P now"
+      "# Shutdown with delay so Packer can cleanup its temp scripts",
+      "nohup sh -c 'sleep 3 && shutdown -P now' &"
     ]
     expect_disconnect = true
   }
