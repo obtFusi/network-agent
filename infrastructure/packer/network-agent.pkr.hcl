@@ -265,7 +265,10 @@ build {
   # Step 7: APT Offline + Step 10: Cleanup (must be last!)
   # Note: shutdown is called here, not via Packer's shutdown_command,
   # because the cleanup deletes SSH host keys which breaks the connection.
+  # skip_clean prevents "Error removing temporary script" after shutdown
   provisioner "shell" {
+    skip_clean        = true
+    expect_disconnect = true
     inline = [
       "# APT Offline",
       "cp /etc/apt/sources.list /etc/apt/sources.list.backup 2>/dev/null || true",
@@ -274,18 +277,16 @@ build {
       "apt-get clean && rm -rf /var/lib/apt/lists/*",
       "# Cleanup",
       "journalctl --vacuum-time=1s",
-      "rm -rf /var/tmp/*",
+      "rm -rf /tmp/* /var/tmp/*",
       "rm -f /etc/ssh/ssh_host_*",
       "truncate -s 0 /etc/machine-id",
       "# Zero free space for better compression (limit to 5GB to avoid timeout)",
       "dd if=/dev/zero of=/EMPTY bs=1M count=5120 2>/dev/null || true",
       "rm -f /EMPTY",
       "sync",
-      "# Shutdown with 60s delay so Packer can cleanup its temp scripts first",
-      "nohup sh -c 'sleep 60 && /sbin/poweroff -f' >/dev/null 2>&1 &",
-      "exit 0"
+      "# Shutdown - skip_clean prevents Packer from trying to remove temp scripts",
+      "shutdown -P now"
     ]
-    expect_disconnect = true
   }
 
   # No post-processor needed - qcow2 is our target format
