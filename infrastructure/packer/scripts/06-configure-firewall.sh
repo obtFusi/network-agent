@@ -25,6 +25,9 @@ table inet filter {
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
 
+        # Accept DHCP responses (server -> client)
+        udp sport 67 udp dport 68 accept
+
         # Accept SSH (port 22) for management
         tcp dport 22 accept
 
@@ -65,6 +68,9 @@ table inet filter {
         # Accept Docker internal traffic
         oifname "docker*" accept
         oifname "br-*" accept
+
+        # DHCP requests (client -> server) - required for IP assignment
+        udp sport 68 udp dport 67 accept
 
         # DNS only to local resolvers (not external!)
         udp dport 53 ip daddr { 127.0.0.1, 127.0.0.53, 172.20.0.0/16 } accept
