@@ -281,8 +281,9 @@ build {
       "dd if=/dev/zero of=/EMPTY bs=1M count=5120 2>/dev/null || true",
       "rm -f /EMPTY",
       "sync",
-      "# Shutdown with delay so Packer can cleanup its temp scripts",
-      "nohup sh -c 'sleep 3 && shutdown -P now' &"
+      "# Shutdown with delay so Packer can cleanup its temp scripts first",
+      "nohup sh -c 'sleep 10 && /sbin/poweroff -f' >/dev/null 2>&1 &",
+      "exit 0"
     ]
     expect_disconnect = true
   }
