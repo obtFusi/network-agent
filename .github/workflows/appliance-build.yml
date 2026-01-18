@@ -263,7 +263,27 @@ jobs:
 
           if [[ -z "$VM_IP" || "$VM_IP" == "null" ]]; then
             echo "ERROR: Failed to get VM IP"
+            echo ""
+            echo "=== DEBUG: Network Interfaces ==="
             ssh root@$PVE_HOST "qm guest cmd $TEST_VMID network-get-interfaces" || true
+            echo ""
+            echo "=== DEBUG: systemd-networkd status ==="
+            ssh root@$PVE_HOST "qm guest exec $TEST_VMID -- bash -lc 'systemctl is-enabled systemd-networkd; systemctl is-active systemd-networkd'" | jq -r '.["out-data"] // "no output"' || true
+            echo ""
+            echo "=== DEBUG: networkctl status ==="
+            ssh root@$PVE_HOST "qm guest exec $TEST_VMID -- bash -lc 'networkctl status ens18 2>&1 || networkctl list'" | jq -r '.["out-data"] // "no output"' || true
+            echo ""
+            echo "=== DEBUG: ip link show ==="
+            ssh root@$PVE_HOST "qm guest exec $TEST_VMID -- bash -lc 'ip link show'" | jq -r '.["out-data"] // "no output"' || true
+            echo ""
+            echo "=== DEBUG: journalctl systemd-networkd (last 50 lines) ==="
+            ssh root@$PVE_HOST "qm guest exec $TEST_VMID -- bash -lc 'journalctl -b -u systemd-networkd --no-pager | tail -50'" | jq -r '.["out-data"] // "no output"' || true
+            echo ""
+            echo "=== DEBUG: /etc/systemd/network/ contents ==="
+            ssh root@$PVE_HOST "qm guest exec $TEST_VMID -- bash -lc 'ls -la /etc/systemd/network/ && cat /etc/systemd/network/20-wired.network'" | jq -r '.["out-data"] // "no output"' || true
+            echo ""
+            echo "=== DEBUG: Other network managers ==="
+            ssh root@$PVE_HOST "qm guest exec $TEST_VMID -- bash -lc 'systemctl is-active NetworkManager 2>/dev/null || echo inactive; systemctl is-active networking.service 2>/dev/null || echo inactive'" | jq -r '.["out-data"] // "no output"' || true
             exit 1
           fi
 
