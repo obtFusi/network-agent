@@ -185,7 +185,7 @@ build {
     inline = [
       "echo 'network-agent' > /etc/hostname",
       "cat > /etc/hosts << 'EOF'\n127.0.0.1   localhost\n127.0.1.1   network-agent\nEOF",
-      "cat > /etc/systemd/network/20-wired.network << 'EOF'\n[Match]\nName=ens18\n[Network]\nDHCP=yes\nEOF",
+      "cat > /etc/systemd/network/20-wired.network << 'EOF'\n[Match]\nName=en*\n[Network]\nDHCP=yes\nEOF",
       "systemctl enable systemd-networkd"
     ]
   }

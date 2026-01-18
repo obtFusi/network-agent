@@ -411,7 +411,7 @@ MANUELLER BUILD (Debugging, Test ohne Release)
 |------|------|
 | Runner | `github-runner` (Proxmox LXC Container) |
 | Proxmox Host | `10.0.0.69` (für qm Befehle via SSH) |
-| SSH Key | `/root/.ssh/id_ed25519` auf Runner → Proxmox |
+| SSH Key | `/home/runner/.ssh/id_ed25519` auf Runner → Proxmox |
 | Status | `ssh root@github-runner systemctl status github-runner` |
 | Logs | `ssh root@github-runner journalctl -u github-runner -f` |
 | Disk | 80GB, nach Build ~40GB frei (zstd + E2E Test) |
