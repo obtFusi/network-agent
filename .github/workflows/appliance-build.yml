@@ -116,7 +116,7 @@ jobs:
           packer build \
             -var "version=${VERSION_CLEAN}" \
             -on-error=abort \
-            network-agent.pkr.hcl || true
+            network-agent.pkr.hcl
 
       - name: Verify build output
         run: |
