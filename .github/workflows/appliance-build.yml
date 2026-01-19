@@ -305,12 +305,12 @@ jobs:
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 root@$VM_IP bash << 'EOF'
+            # Note: VERSION is NOT set - defaults to 'latest' which matches embedded images
             printf '%s\n' \
               'POSTGRES_USER=agent' \
               'POSTGRES_PASSWORD=test-password-123' \
               'BASIC_AUTH_USER=admin' \
               'BASIC_AUTH_HASH=$2a$14$test.hash.for.testing.only' \
-              'VERSION=test' \
               > /opt/network-agent/.env
             chmod 600 /opt/network-agent/.env
 
