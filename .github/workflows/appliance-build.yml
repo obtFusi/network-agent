@@ -283,6 +283,22 @@ jobs:
             echo "WARNING: No SSH key found, SSH may fail"
           fi
 
+          # Regenerate SSH host keys (deleted during build for unique identity)
+          echo "Regenerating SSH host keys..."
+          ssh root@$PVE_HOST "qm guest exec $TEST_VMID -- bash -c 'ssh-keygen -A && systemctl restart sshd'"
+          echo "SSH host keys regenerated and sshd restarted"
+
+          # Wait for SSH to be ready
+          echo "Waiting for SSH to be ready..."
+          for i in {1..10}; do
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes root@$VM_IP "echo SSH ready" 2>/dev/null; then
+              echo "SSH is ready"
+              break
+            fi
+            echo "Waiting for SSH... ($i/10)"
+            sleep 5
+          done
+
       - name: Configure and start services
         if: ${{ inputs.skip_test != true }}
         run: |
