@@ -55,7 +55,7 @@ info "Checking Proxmox environment..."
 if ! command -v pveversion &> /dev/null; then
     error "Proxmox VE not found. This script must run on a Proxmox host."
 fi
-PVE_VERSION=$(pveversion --version | head -1)
+PVE_VERSION=$(pveversion | head -1)
 log "Detected: $PVE_VERSION"
 
 # 3. Check if VMID is available
@@ -74,8 +74,8 @@ fi
 
 # Check free space (need ~50GB)
 REQUIRED_GB=50
-FREE_BYTES=$(pvesm status -storage "$STORAGE" 2>/dev/null | awk 'NR==2 {print $5}')
-FREE_GB=$((FREE_BYTES / 1024 / 1024 / 1024))
+FREE_KIB=$(pvesm status -storage "$STORAGE" 2>/dev/null | awk 'NR==2 {print $6}')
+FREE_GB=$((FREE_KIB / 1024 / 1024))
 
 if [[ "$FREE_GB" -lt "$REQUIRED_GB" ]]; then
     error "Not enough space on $STORAGE (${FREE_GB}GB free, ${REQUIRED_GB}GB required)"
@@ -90,11 +90,37 @@ for tool in curl zstd sha256sum jq; do
     fi
 done
 
+# aria2c is special - command is aria2c but package is aria2
+if ! command -v aria2c &>/dev/null; then
+    warn "Installing aria2 for fast parallel downloads..."
+    apt-get update -qq && apt-get install -y -qq aria2
+fi
+
 # 6. Create temp directory
-TMPDIR=$(mktemp -d -t network-agent-XXXXXX)
+# Use TMPDIR env var if set, otherwise /var/tmp (not /tmp which is often tmpfs)
+TEMP_BASE="${TMPDIR:-/var/tmp}"
+TMPDIR=$(mktemp -d -p "$TEMP_BASE" network-agent-XXXXXX)
 trap "rm -rf $TMPDIR" EXIT
 cd "$TMPDIR"
 info "Working directory: $TMPDIR"
+
+# Check temp directory has enough space
+# Peak requirement: ~27GB parts + ~50GB decompressed = ~77GB
+REQUIRED_TEMP_GB=78
+TMPDIR_FREE=$(df -BG "$TMPDIR" | awk 'NR==2 {gsub(/G/,"",$4); print $4}')
+if [[ "$TMPDIR_FREE" -lt "$REQUIRED_TEMP_GB" ]]; then
+    error "Not enough temp space: ${TMPDIR_FREE}GB available, ${REQUIRED_TEMP_GB}GB required.
+
+The appliance image requires ~80GB of temporary space for:
+  - Compressed parts: ~27GB
+  - Decompressed image: ~50GB
+
+Please either:
+  1. Free up space on the root filesystem
+  2. Or specify a different temp location by setting TMPDIR environment variable:
+     TMPDIR=/path/to/large/storage $0 $VMID $STORAGE"
+fi
+log "${TMPDIR_FREE}GB available for temporary files"
 
 # 7. Download image parts
 echo ""
@@ -111,18 +137,35 @@ fi
 PARTS=$(grep -oE 'part-[a-z]{2}' SHA256SUMS | sort -u)
 PART_COUNT=$(echo "$PARTS" | wc -l)
 
-log "Downloading $PART_COUNT parts..."
+log "Downloading $PART_COUNT parts with aria2c (parallel)..."
 
+# Create aria2c input file for batch download
+ARIA2_INPUT=$(mktemp)
 for part in $PARTS; do
     FILE="network-agent-${VERSION}.qcow2.zst.${part}"
-    echo -n "  [↓] ${FILE}... "
-    if curl -# -fL -o "$FILE" "$BASE_URL/$FILE" 2>/dev/null; then
-        SIZE=$(du -h "$FILE" | cut -f1)
-        echo "OK ($SIZE)"
-    else
-        error "Download failed: $FILE"
-    fi
+    echo "$BASE_URL/$FILE" >> "$ARIA2_INPUT"
+    echo "  out=$FILE" >> "$ARIA2_INPUT"
 done
+
+# Download all parts in parallel with 16 connections per file
+if aria2c -x 16 -s 16 -j 4 --console-log-level=warn --summary-interval=10 \
+    --file-allocation=none -i "$ARIA2_INPUT" 2>&1; then
+    rm -f "$ARIA2_INPUT"
+    log "All $PART_COUNT parts downloaded"
+    # Show sizes
+    for part in $PARTS; do
+        FILE="network-agent-${VERSION}.qcow2.zst.${part}"
+        if [[ -f "$FILE" ]]; then
+            SIZE=$(du -h "$FILE" | cut -f1)
+            echo "  [✓] ${FILE} ($SIZE)"
+        else
+            error "Download failed: $FILE"
+        fi
+    done
+else
+    rm -f "$ARIA2_INPUT"
+    error "Download failed. Check network connection and retry."
+fi
 
 # 8. Verify checksums
 echo ""
@@ -133,19 +176,19 @@ else
     error "Checksum verification failed! Download may be corrupted."
 fi
 
-# 9. Reassemble and decompress
+# 9. Reassemble and decompress (streaming to save disk space)
 echo ""
 info "Reassembling and decompressing image..."
-echo "    This may take a few minutes for the 22GB image..."
+echo "    This may take a few minutes for the 50GB image..."
+echo "    Using streaming decompression to minimize disk usage..."
 
-# Reassemble parts
-cat network-agent-*.qcow2.zst.part-* > network-agent.qcow2.zst
-
-# Decompress
-if zstd -d -f network-agent.qcow2.zst -o network-agent.qcow2; then
+# Stream decompress: parts -> zstd -> qcow2 (no intermediate file)
+# This saves ~27GB disk space compared to creating .zst first
+if cat network-agent-*.qcow2.zst.part-* | zstd -d -o network-agent.qcow2; then
     FINAL_SIZE=$(du -h network-agent.qcow2 | cut -f1)
     log "Decompressed: $FINAL_SIZE"
-    rm -f network-agent.qcow2.zst network-agent-*.part-*
+    # Remove parts after successful decompression
+    rm -f network-agent-*.qcow2.zst.part-*
 else
     error "Decompression failed"
 fi
