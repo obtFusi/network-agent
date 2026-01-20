@@ -12,12 +12,14 @@ class NetworkAgent:
 
     def __init__(self, config: Dict[str, Any], system_prompt: str):
         llm_config = config["llm"]["provider"]
+        ollama_config = config["llm"].get("ollama", {})
         self.llm = LLMClient(
             model=llm_config["model"],
             base_url=llm_config["base_url"],
             temperature=llm_config["temperature"],
             max_tokens=llm_config["max_tokens"],
             max_context_tokens=llm_config.get("max_context_tokens"),
+            ollama_options=ollama_config if ollama_config else None,
         )
 
         self.tools = get_all_tools()

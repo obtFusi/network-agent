@@ -42,6 +42,11 @@ services:
     container_name: ollama
     hostname: ollama
     restart: unless-stopped
+    environment:
+      # CPU Optimization: use cores-2 threads (auto-detect would use all)
+      - OLLAMA_NUM_THREADS=${OLLAMA_NUM_THREADS:-}
+      # Keep models loaded longer (5min default, increase for frequent use)
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
     volumes:
       - ollama-models:/root/.ollama
     networks:
