@@ -22,6 +22,7 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         max_context_tokens: Optional[int] = None,
+        ollama_options: Optional[Dict[str, Any]] = None,
     ):
         # Config-Validierung
         if not model:
@@ -51,6 +52,7 @@ class LLMClient:
         self.max_tokens = max_tokens
         self._context_limit = max_context_tokens  # User override
         self._cached_context_limit = None
+        self.ollama_options = ollama_options or {}
 
     def get_context_limit(self) -> int:
         """Ermittelt das Context-Limit für das aktuelle Model.
@@ -109,5 +111,9 @@ class LLMClient:
 
         if tools:
             params["tools"] = tools
+
+        # Pass Ollama-specific options via extra_body (CPU optimization)
+        if self.ollama_options:
+            params["extra_body"] = {"options": self.ollama_options}
 
         return self.client.chat.completions.create(**params)
