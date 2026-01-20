@@ -26,7 +26,7 @@ services:
     environment:
       - GRANIAN_PORT=8180         # Port for SearXNG (granian server)
       - GRANIAN_HOST=0.0.0.0      # Bind to all interfaces
-      - SEARXNG_SECRET=network-agent-searxng-dev-key-2026  # Dev-only secret
+      - SEARXNG_SECRET=${SEARXNG_SECRET}  # From .env file
     volumes:
       - ./searxng:/etc/searxng  # Not read-only - SearXNG needs to write secret_key
     healthcheck:

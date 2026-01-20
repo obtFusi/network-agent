@@ -10,8 +10,13 @@ if [[ "${INCLUDE_MODEL:-true}" != "true" ]]; then
     exit 0
 fi
 
-MODEL="${OLLAMA_MODEL:-qwen3:30b-a3b}"
-echo "Model: $MODEL"
+# Primary model (larger, better quality)
+PRIMARY_MODEL="${OLLAMA_MODEL:-qwen3:30b-a3b}"
+# Secondary model (smaller, faster for CPU-only)
+SECONDARY_MODEL="qwen3:4b"
+
+echo "Primary model: $PRIMARY_MODEL"
+echo "Secondary model: $SECONDARY_MODEL"
 
 # Create Docker volume for models
 docker volume create ollama-models
@@ -33,12 +38,16 @@ for i in {1..30}; do
     sleep 2
 done
 
-# Pull the model
-echo "Pulling model: $MODEL"
-docker exec ollama-temp ollama pull "$MODEL"
+# Pull the primary model
+echo "Pulling primary model: $PRIMARY_MODEL"
+docker exec ollama-temp ollama pull "$PRIMARY_MODEL"
 
-# Verify model was downloaded
-echo "Verifying model..."
+# Pull the secondary model (smaller, faster)
+echo "Pulling secondary model: $SECONDARY_MODEL"
+docker exec ollama-temp ollama pull "$SECONDARY_MODEL"
+
+# Verify models were downloaded
+echo "Verifying models..."
 docker exec ollama-temp ollama list
 
 # Stop and remove temp container
