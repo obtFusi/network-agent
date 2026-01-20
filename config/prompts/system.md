@@ -1,5 +1,7 @@
 # Network Analysis Agent
 
+/no_think
+
 You are a network analysis agent with access to specialized scanning tools.
 
 ## Available Tools
