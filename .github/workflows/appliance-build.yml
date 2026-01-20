@@ -22,6 +22,9 @@ env:
   PACKER_VERSION: "1.11.0"
   TEST_VMID: 999
 
+permissions:
+  contents: write
+
 jobs:
   validate:
     name: Validate Templates
@@ -181,7 +184,7 @@ jobs:
       - name: Create test VM
         if: ${{ inputs.skip_test != true }}
         env:
-          PVE_HOST: 10.0.0.69
+          PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
           VERSION_CLEAN="${VERSION#v}"
 
@@ -228,7 +231,7 @@ jobs:
         if: ${{ inputs.skip_test != true }}
         id: vm-ip
         env:
-          PVE_HOST: 10.0.0.69
+          PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
           echo "Waiting for VM to boot..."
           sleep 60
@@ -356,7 +359,7 @@ jobs:
         # Only cleanup on success - keep VM for debugging on failure
         if: success()
         env:
-          PVE_HOST: 10.0.0.69
+          PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
           ssh root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           sleep 5
@@ -369,7 +372,7 @@ jobs:
       - name: Cleanup on failure
         if: failure()
         env:
-          PVE_HOST: 10.0.0.69
+          PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
           # Cleanup test VM if it exists
           ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
