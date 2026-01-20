@@ -11,6 +11,10 @@ on:
         description: 'Skip E2E test (for debugging)'
         type: boolean
         default: false
+      cleanup_only:
+        description: 'Only cleanup old artifacts (no build)'
+        type: boolean
+        default: false
   release:
     types: [published]
 
@@ -84,6 +88,46 @@ jobs:
             download.docker.com:443
 
       - uses: actions/checkout@v4
+
+      # ═══════════════════════════════════════════════════════════
+      # CLEANUP-ONLY MODE (manual artifact cleanup)
+      # ═══════════════════════════════════════════════════════════
+
+      - name: Cleanup old artifacts (if requested)
+        if: ${{ inputs.cleanup_only == true }}
+        run: |
+          echo "Cleaning up old build artifacts..."
+          rm -rf infrastructure/packer/output/ || true
+          sudo fstrim -av || true
+          echo "Cleanup complete. Exiting without build."
+          exit 0
+
+      # ═══════════════════════════════════════════════════════════
+      # EARLY VALIDATION (fail fast before expensive build)
+      # ═══════════════════════════════════════════════════════════
+
+      - name: Validate secrets and connectivity
+        env:
+          PVE_HOST: ${{ secrets.PVE_HOST }}
+        run: |
+          # Check if PVE_HOST secret is configured
+          if [[ -z "$PVE_HOST" ]]; then
+            echo "::error::PVE_HOST secret is not configured!"
+            echo ""
+            echo "Please add the Proxmox host IP as a repository secret:"
+            echo "  gh secret set PVE_HOST --body '10.0.0.69'"
+            echo ""
+            exit 1
+          fi
+
+          # Check SSH connectivity to Proxmox
+          echo "Testing SSH connectivity to Proxmox ($PVE_HOST)..."
+          if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes root@$PVE_HOST "echo 'SSH OK'" 2>/dev/null; then
+            echo "::error::Cannot SSH to Proxmox host $PVE_HOST"
+            echo "Check: SSH key, firewall, Proxmox availability"
+            exit 1
+          fi
+          echo "✓ Proxmox connectivity validated"
 
       - name: Install dependencies
         run: |
@@ -369,21 +413,30 @@ jobs:
           echo "Running fstrim to reclaim disk space..."
           sudo fstrim -av || true
 
-      - name: Cleanup on failure
+      - name: Cleanup test VM on failure
         if: failure()
         env:
           PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
-          # Cleanup test VM if it exists
-          ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
-          ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
-          # Cleanup temp files on Proxmox
-          ssh root@$PVE_HOST "rm -rf /root/build-tmp/network-agent*.qcow2* 2>/dev/null || true"
-          # Cleanup local build artifacts
-          rm -rf infrastructure/packer/output/ || true
-          # Reclaim disk space
+          # Only cleanup VM and temp files - KEEP build artifacts for investigation!
+          if [[ -n "$PVE_HOST" ]]; then
+            ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
+            ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
+            ssh root@$PVE_HOST "rm -rf /root/build-tmp/network-agent*.qcow2* 2>/dev/null || true"
+          fi
+
+          # DO NOT delete build artifacts - they took 35+ minutes to create!
+          # Artifacts are kept for:
+          # 1. Manual investigation of E2E failures
+          # 2. Manual upload if only upload step failed
+          # 3. Re-running E2E tests locally
+
+          echo "::notice::Build artifacts preserved in infrastructure/packer/output/"
+          echo "To cleanup manually: rm -rf infrastructure/packer/output/"
+
+          # Reclaim thin-provisioned space (doesn't delete files)
           sudo fstrim -av || true
-          echo "Cleanup completed after failure"
+          echo "VM cleanup completed - artifacts preserved"
 
       # ═══════════════════════════════════════════════════════════
       # UPLOAD (only after successful test)
