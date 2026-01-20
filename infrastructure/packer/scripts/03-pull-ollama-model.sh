@@ -13,7 +13,8 @@ fi
 # Primary model (larger, better quality)
 PRIMARY_MODEL="${OLLAMA_MODEL:-qwen3:30b-a3b}"
 # Secondary model (smaller, faster for CPU-only)
-SECONDARY_MODEL="qwen3:4b"
+# Using instruct variant - no thinking mode for faster responses
+SECONDARY_MODEL="qwen3:4b-instruct-2507-q4_K_M"
 
 echo "Primary model: $PRIMARY_MODEL"
 echo "Secondary model: $SECONDARY_MODEL"
