@@ -1,11 +1,11 @@
 # Network Agent Appliance Configuration
-# Pre-configured for local Ollama with Qwen3 30B-A3B
+# Pre-configured for local Ollama with Qwen3
 
 llm:
   provider:
-    # Qwen3 30B-A3B - MoE model optimized for CPU inference
-    # Uses only 3B active parameters per token, runs well on 24GB RAM
-    model: "qwen3:30b-a3b"
+    # Qwen3 4B - Fast model for CPU-only systems (default)
+    # For better quality with GPU/more RAM, use: qwen3:30b-a3b
+    model: "qwen3:4b"
 
     # Local Ollama endpoint (container name via Docker networking)
     base_url: "http://ollama:11434/v1"
