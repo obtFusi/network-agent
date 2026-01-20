@@ -205,16 +205,19 @@ Für eine schlüsselfertige Lösung gibt es eine vorkonfigurierte **Proxmox VM**
 
 **Was ist enthalten?**
 - Network Agent (vorinstalliert)
-- Ollama mit Qwen3 30B-A3B (20GB lokales LLM, kein API-Key nötig)
+- Ollama mit Qwen3 (lokales LLM, kein API-Key nötig)
+  - **Standard:** Qwen3 4B Instruct (~3GB, optimiert für CPU-only)
+  - **Optional:** Qwen3 30B-A3B (~20GB, bessere Qualität bei mehr RAM)
 - Caddy Reverse Proxy (HTTPS + Basic Auth)
 - PostgreSQL (Datenbank)
 - Offline-fähig (keine externen Dependencies zur Laufzeit)
 
 **Systemanforderungen:**
-- 24-32 GB RAM (LLM benötigt ~20 GB)
-- 4-8 CPU Cores
-- 100 GB Disk
-- Proxmox VE 8.x
+
+| Modus | RAM | CPU | Disk | Model |
+|-------|-----|-----|------|-------|
+| Standard (CPU) | 8-16 GB | 4+ Cores | 50 GB | Qwen3 4B Instruct |
+| High-Quality | 24-32 GB | 4-8 Cores | 100 GB | Qwen3 30B-A3B |
 
 **Installation (One-Click):**
 
@@ -223,11 +226,11 @@ Für eine schlüsselfertige Lösung gibt es eine vorkonfigurierte **Proxmox VM**
 curl -sSL https://github.com/obtFusi/network-agent/releases/latest/download/install-network-agent.sh | bash -s -- 200
 
 # Oder mit benutzerdefiniertem Storage:
-curl -sSL ... | bash -s -- 200 ceph-pool
+curl -sSL https://github.com/obtFusi/network-agent/releases/latest/download/install-network-agent.sh | bash -s -- 200 ceph-pool
 ```
 
 Das Script:
-1. Lädt das Image (~8GB komprimiert)
+1. Lädt das Image (~8GB komprimiert, 14 Parts)
 2. Verifiziert SHA256 Checksums
 3. Dekomprimiert zu ~22GB qcow2
 4. Erstellt VM 200 mit optimalen Einstellungen
@@ -236,18 +239,24 @@ Das Script:
 **Manueller Download:**
 
 ```bash
-# Parts herunterladen
-wget https://github.com/obtFusi/network-agent/releases/latest/download/network-agent-0.4.0.qcow2.zst.part-aa
-wget https://github.com/obtFusi/network-agent/releases/latest/download/network-agent-0.4.0.qcow2.zst.part-ab
-# ... (5 Parts total)
+# Alle Parts + Checksums herunterladen
+VERSION="0.9.0"
+for part in aa ab ac ad ae af ag ah ai aj ak al am an; do
+  wget "https://github.com/obtFusi/network-agent/releases/download/v${VERSION}/network-agent-${VERSION}.qcow2.zst.part-${part}"
+done
+wget "https://github.com/obtFusi/network-agent/releases/download/v${VERSION}/SHA256SUMS"
+
+# Checksums verifizieren (WICHTIG!)
+sha256sum -c SHA256SUMS
 
 # Zusammenfügen und dekomprimieren
-cat network-agent-*.part-* | zstd -d -o network-agent.qcow2
+cat network-agent-${VERSION}.qcow2.zst.part-* | zstd -d -o network-agent.qcow2
 
 # VM erstellen
-qm create 200 --name network-agent --memory 32768 --cores 8 --cpu host
+qm create 200 --name network-agent --memory 16384 --cores 4 --cpu host
 qm importdisk 200 network-agent.qcow2 local-lvm --format qcow2
 qm set 200 --scsi0 local-lvm:vm-200-disk-0 --boot order=scsi0
+qm set 200 --net0 virtio,bridge=vmbr0
 ```
 
 **Erster Start:**
@@ -258,9 +267,10 @@ qm terminal 200
 ```
 
 Beim ersten Login:
-1. Neues Root-Passwort setzen (Pflicht!)
-2. Web-Credentials werden generiert und angezeigt
-3. Services starten automatisch
+1. Automatischer First-Boot startet
+2. Neues Root-Passwort setzen (Pflicht!)
+3. Web-Credentials werden generiert und angezeigt
+4. Services starten automatisch
 
 **Zugriff:**
 - Web UI: `https://<VM-IP>` (Credentials aus First-Boot)
@@ -273,6 +283,15 @@ ssh root@<VM-IP>
 cd /opt/network-agent
 docker compose down
 docker compose -f docker-compose.yml -f docker-compose.scan-mode.yml up -d
+```
+
+**Online-Modus (mit Web-Suche via SearXNG):**
+
+```bash
+ssh root@<VM-IP>
+cd /opt/network-agent
+docker compose down
+docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
 ```
 
 **Ports:**

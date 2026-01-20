@@ -8,7 +8,7 @@
 
 ## TL;DR
 
-- **GitHub Actions:** 7 Workflows (CI, Release, CodeQL, Auto-Label, PR-Lint, Appliance-Build, OVA-Build)
+- **GitHub Actions:** 8 Workflows (CI, Release, CodeQL, Auto-Label, PR-Lint, Appliance-Build, Docker-Build, OVA-Build)
 - **Lokale CI:** `act push` führt alle 4 Required Checks aus
 - **Branch Protection:** 4 Required Status Checks (lint, test, security, docker)
 - **Claude Code Skills:** `/pr`, `/release`, `/merge-deps` für automatisierte Workflows
@@ -230,7 +230,29 @@ gh workflow run appliance-build.yml -f version=0.8.0
 - Packer braucht KVM/QEMU (nicht auf GitHub-hosted verfügbar)
 - Build braucht ~8GB RAM
 
-### 2.7 Self-hosted Runner
+### 2.7 Docker Build Workflow (`.github/workflows/docker-build.yml`)
+
+**Trigger:** Push auf `main` (bei Änderungen an Dockerfile, Code, Config) oder `workflow_dispatch`
+**Zweck:** Docker Image zu ghcr.io pushen
+
+```yaml
+# Manuell triggern mit Version
+gh workflow run docker-build.yml -f version=0.9.0
+```
+
+**Schritte:**
+
+| Schritt | Beschreibung |
+|---------|--------------|
+| Login to ghcr.io | Mit GITHUB_TOKEN authentifizieren |
+| Extract metadata | Version aus cli.py oder Input |
+| Build and push | Multi-Tag: `version` + `latest` |
+
+**Tags:**
+- `ghcr.io/obtfusi/network-agent:0.9.0`
+- `ghcr.io/obtfusi/network-agent:latest`
+
+### 2.8 Self-hosted Runner
 
 **Location:** Proxmox LXC 150 (`github-runner`)
 **Host:** 10.0.0.69 (Proxmox)
