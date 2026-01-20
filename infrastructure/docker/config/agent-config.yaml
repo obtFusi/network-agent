@@ -3,9 +3,10 @@
 
 llm:
   provider:
-    # Qwen3 4B - Fast model for CPU-only systems (default)
+    # Qwen3 4B Instruct - Fast model for CPU-only systems (default)
+    # Uses instruct variant (no thinking mode) for faster responses
     # For better quality with GPU/more RAM, use: qwen3:30b-a3b
-    model: "qwen3:4b"
+    model: "qwen3:4b-instruct-2507-q4_K_M"
 
     # Local Ollama endpoint (container name via Docker networking)
     base_url: "http://ollama:11434/v1"
