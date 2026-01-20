@@ -1,65 +1,29 @@
 #!/bin/bash
 # first-boot.sh - Network Agent Appliance First-Boot Setup
-# Generates secure secrets and forces password change
+# Runs automatically on first boot - generates secrets and starts services
+# Fully transparent - no user interaction required
 set -euo pipefail
 
 MARKER="/var/lib/network-agent/.initialized"
 ENV_FILE="/opt/network-agent/.env"
 COMPOSE_DIR="/opt/network-agent"
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log() { echo -e "${GREEN}[✓]${NC} $1"; }
-warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-error() { echo -e "${RED}[✗]${NC} $1"; exit 1; }
-info() { echo -e "${BLUE}[i]${NC} $1"; }
+CREDS_FILE="/root/network-agent-credentials.txt"
 
 # Check if already initialized
 if [[ -f "$MARKER" ]]; then
-    log "Already initialized, skipping first-boot setup"
     exit 0
 fi
 
-echo ""
-echo "╔═══════════════════════════════════════════════════════════════╗"
-echo "║          NETWORK AGENT - FIRST BOOT SETUP                     ║"
-echo "╚═══════════════════════════════════════════════════════════════╝"
-echo ""
-
-# 1. Force root password change
-warn "SECURITY: You must set a new root password!"
-echo ""
-while true; do
-    if passwd root; then
-        log "Root password changed successfully"
-        break
-    else
-        warn "Password change failed, please try again"
-    fi
-done
-echo ""
-
-# 2. Generate secure secrets
-info "Generating secure secrets..."
-
-# Generate random passwords
+# Generate secure secrets
 POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
 BASIC_AUTH_USER="admin"
 BASIC_AUTH_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
 SEARXNG_SECRET=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
 
-# Generate Caddy password hash
-# Caddy uses bcrypt, we need to run caddy in a container to hash
+# Generate Caddy password hash (bcrypt)
 BASIC_AUTH_HASH=$(docker run --rm caddy:2.9-alpine caddy hash-password --plaintext "$BASIC_AUTH_PASSWORD" 2>/dev/null)
 
 # Escape $ characters in bcrypt hash for Docker Compose .env files
-# Docker Compose requires $$ to represent a literal $ character
-# bcrypt hashes contain $ delimiters (e.g., $2a$14$...) that must be preserved
 BASIC_AUTH_HASH_ESCAPED=$(printf '%s' "$BASIC_AUTH_HASH" | sed 's/\$/\$\$/g')
 
 # Get version (with fallback)
@@ -82,36 +46,21 @@ BASIC_AUTH_HASH=${BASIC_AUTH_HASH_ESCAPED}
 # SearXNG
 SEARXNG_SECRET=${SEARXNG_SECRET}
 
+# LLM Model (qwen3:4b = fast/small, qwen3:30b-a3b = quality/large)
+#LLM_MODEL=qwen3:4b
+
 # Version
 VERSION=${APPLIANCE_VERSION}
 EOF
-
 chmod 600 "$ENV_FILE"
-log "Secrets generated and saved to $ENV_FILE"
 
-# 3. Get network information
+# Get network information
 VM_IP=$(hostname -I | awk '{print $1}')
 
-# 4. Display credentials
-echo ""
-echo "╔═══════════════════════════════════════════════════════════════╗"
-echo "║                    WEB INTERFACE CREDENTIALS                  ║"
-echo "╠═══════════════════════════════════════════════════════════════╣"
-echo "║                                                               ║"
-printf "║  %-60s ║\n" "URL:      https://${VM_IP}"
-printf "║  %-60s ║\n" "User:     ${BASIC_AUTH_USER}"
-printf "║  %-60s ║\n" "Password: ${BASIC_AUTH_PASSWORD}"
-echo "║                                                               ║"
-echo "║  IMPORTANT: Save these credentials now!                       ║"
-echo "║  They will not be shown again.                                ║"
-echo "║                                                               ║"
-echo "╚═══════════════════════════════════════════════════════════════╝"
-echo ""
-
-# 5. Save credentials to temporary file for user reference
-CREDS_FILE="/root/network-agent-credentials.txt"
+# Save credentials to file for user reference
 cat > "$CREDS_FILE" << EOF
-Network Agent Appliance - Credentials
+Network Agent Appliance - Access Credentials
+=============================================
 Generated: $(date)
 
 Web Interface:
@@ -119,74 +68,24 @@ Web Interface:
   User:     ${BASIC_AUTH_USER}
   Password: ${BASIC_AUTH_PASSWORD}
 
-SSH:
+SSH Access:
   User:     root
-  Password: (the one you just set)
+  Auth:     SSH key only (password disabled)
 
-IMPORTANT: Delete this file after saving credentials securely!
-  rm $CREDS_FILE
+To change LLM model, edit /opt/network-agent/.env:
+  LLM_MODEL=qwen3:4b        # Fast (default, 2.5GB)
+  LLM_MODEL=qwen3:30b-a3b   # Quality (18GB)
+Then restart: cd /opt/network-agent && docker compose restart net-agent
+
+SECURITY: Delete this file after saving credentials!
+  rm ${CREDS_FILE}
 EOF
 chmod 600 "$CREDS_FILE"
-warn "Credentials also saved to: $CREDS_FILE"
-warn "Delete this file after saving credentials: rm $CREDS_FILE"
-echo ""
 
-# 6. Start Docker Compose
-info "Starting Network Agent services..."
+# Start Docker Compose
 cd "$COMPOSE_DIR"
+docker compose up -d
 
-if docker compose up -d; then
-    log "Services started successfully"
-else
-    error "Failed to start services. Check: docker compose logs"
-fi
-
-# 7. Wait for services to be healthy
-info "Waiting for services to become healthy..."
-TIMEOUT=300
-ELAPSED=0
-while [[ $ELAPSED -lt $TIMEOUT ]]; do
-    if docker compose ps | grep -q "healthy"; then
-        break
-    fi
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
-    echo -n "."
-done
-echo ""
-
-# 8. Show service status
-echo ""
-info "Service Status:"
-docker compose ps
-echo ""
-
-# 9. Create marker file
+# Create marker file
 mkdir -p "$(dirname "$MARKER")"
 touch "$MARKER"
-
-# 10. Final message
-echo ""
-echo "╔═══════════════════════════════════════════════════════════════╗"
-echo "║                    SETUP COMPLETE!                            ║"
-echo "╠═══════════════════════════════════════════════════════════════╣"
-echo "║                                                               ║"
-printf "║  %-60s ║\n" "Access: https://${VM_IP}"
-echo "║                                                               ║"
-echo "║  Commands:                                                    ║"
-echo "║    systemctl status network-agent   # Service status          ║"
-echo "║    docker compose logs -f           # View logs               ║"
-echo "║    docker compose restart           # Restart services        ║"
-echo "║                                                               ║"
-echo "║  For L2/L3 scanning (host network mode):                      ║"
-echo "║    cd /opt/network-agent                                      ║"
-echo "║    docker compose down                                        ║"
-echo "║    docker compose -f docker-compose.yml \\                     ║"
-echo "║                   -f docker-compose.scan-mode.yml up -d       ║"
-echo "║                                                               ║"
-echo "║  To switch LLM model (edit .env, then restart):               ║"
-echo "║    LLM_MODEL=qwen3:4b      # Fast (default, 2.5GB)            ║"
-echo "║    LLM_MODEL=qwen3:30b-a3b # Quality (18GB, needs more RAM)   ║"
-echo "║                                                               ║"
-echo "╚═══════════════════════════════════════════════════════════════╝"
-echo ""
