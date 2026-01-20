@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.0-blue.svg)](CHANGELOG.md)
 
 > **Für Entwickler:** [CI/CD-Dokumentation](docs/CICD.md) - Pipeline, GitHub Actions, Claude Code Skills
 
@@ -240,7 +240,7 @@ Das Script:
 
 ```bash
 # Alle Parts + Checksums herunterladen
-VERSION="0.9.0"
+VERSION="0.10.0"
 for part in aa ab ac ad ae af ag ah ai aj ak al am an; do
   wget "https://github.com/obtFusi/network-agent/releases/download/v${VERSION}/network-agent-${VERSION}.qcow2.zst.part-${part}"
 done

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-01-20
+
+### Changed
+- **Default Model**: Qwen3 4B Instruct replaces 30B-A3B as default (optimized for CPU-only)
+- **Context Window**: Reduced from 32k to 4k tokens for faster CPU inference
+- **First-Boot**: Fully automatic process with transparent credential generation
+
+### Added
+- **CPU Optimization**: Ollama tuning parameters (num_thread, num_batch, num_ctx)
+- **Documentation**: Updated README with dual-mode system requirements (CPU/High-RAM)
+
 ## [0.9.0] - 2026-01-17
 
 ### Added
