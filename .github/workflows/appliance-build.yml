@@ -396,25 +396,13 @@ jobs:
             infrastructure/packer/output/install-network-agent.sh
           retention-days: 7
 
-  release:
-    name: Upload to Release
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    if: github.event_name == 'release'
-    permissions:
-      contents: write
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: appliance-${{ github.ref_name }}
-          path: ./artifacts
-
+      # Upload directly to release from self-hosted runner (avoids 26GB artifact download)
       - name: Upload to Release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/*.part-*
-            artifacts/SHA256SUMS
-            artifacts/install-network-agent.sh
+            infrastructure/packer/output/*.part-*
+            infrastructure/packer/output/SHA256SUMS
+            infrastructure/packer/output/install-network-agent.sh
           fail_on_unmatched_files: true
