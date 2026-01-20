@@ -233,10 +233,10 @@ build {
   }
 
   # Step 8: Pull Docker images from ghcr.io for offline use
-  # Use 'latest' tag for embedding - appliance VERSION is separate from image tag
+  # IMPORTANT: VERSION must match the tag being pulled for offline use
   provisioner "shell" {
     inline = [
-      "cd /opt/network-agent && docker compose pull"
+      "cd /opt/network-agent && VERSION=${var.version} docker compose pull"
     ]
   }
 
