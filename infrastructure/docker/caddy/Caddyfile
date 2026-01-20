@@ -7,15 +7,22 @@
 
     # Disable admin API (security)
     admin off
+
+    # Default SNI for IP-based access (no hostname in TLS handshake)
+    # Required because clients don't send SNI when connecting to IP addresses
+    default_sni network-agent
 }
 
 # HTTPS with self-signed certificate
-:443 {
-    tls internal
+# Use wildcard matcher to accept any hostname/IP
+https:// {
+    tls internal {
+        on_demand
+    }
 
     # Basic Auth protection
     # Credentials are generated on first boot
-    basicauth /* {
+    basic_auth /* {
         {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
     }
 

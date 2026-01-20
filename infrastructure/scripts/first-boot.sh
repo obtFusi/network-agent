@@ -51,10 +51,19 @@ info "Generating secure secrets..."
 POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
 BASIC_AUTH_USER="admin"
 BASIC_AUTH_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+SEARXNG_SECRET=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
 
 # Generate Caddy password hash
 # Caddy uses bcrypt, we need to run caddy in a container to hash
 BASIC_AUTH_HASH=$(docker run --rm caddy:2.9-alpine caddy hash-password --plaintext "$BASIC_AUTH_PASSWORD" 2>/dev/null)
+
+# Escape $ characters in bcrypt hash for Docker Compose .env files
+# Docker Compose requires $$ to represent a literal $ character
+# bcrypt hashes contain $ delimiters (e.g., $2a$14$...) that must be preserved
+BASIC_AUTH_HASH_ESCAPED=$(printf '%s' "$BASIC_AUTH_HASH" | sed 's/\$/\$\$/g')
+
+# Get version (with fallback)
+APPLIANCE_VERSION=$(cat /opt/network-agent/VERSION 2>/dev/null || echo "latest")
 
 # Write .env file
 cat > "$ENV_FILE" << EOF
@@ -68,10 +77,13 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 
 # Caddy Basic Auth
 BASIC_AUTH_USER=${BASIC_AUTH_USER}
-BASIC_AUTH_HASH=${BASIC_AUTH_HASH}
+BASIC_AUTH_HASH=${BASIC_AUTH_HASH_ESCAPED}
+
+# SearXNG
+SEARXNG_SECRET=${SEARXNG_SECRET}
 
 # Version
-VERSION=$(cat /opt/network-agent/VERSION 2>/dev/null || echo "latest")
+VERSION=${APPLIANCE_VERSION}
 EOF
 
 chmod 600 "$ENV_FILE"

@@ -103,6 +103,8 @@ networks:
 volumes:
   agent-data:
   ollama-models:
+    # Use external volume created during appliance build (contains pre-downloaded model)
+    external: true
   postgres-data:
   caddy-data:
   caddy-config:
