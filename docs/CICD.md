@@ -1,6 +1,6 @@
 # CI/CD - Network Agent
 
-**Letzte Aktualisierung:** 2026-01-17
+**Letzte Aktualisierung:** 2026-01-23
 **Status:** Production
 **SSOT für:** CI/CD-Pipeline, Workflow-Automation, Claude Code Integration
 
@@ -209,26 +209,37 @@ ignoreLabels: |
 ### 2.6 Appliance Build Workflow (`.github/workflows/appliance-build.yml`)
 
 **Trigger:** `workflow_dispatch` (manuell) oder `release` (bei Tag)
-**Runner:** Self-hosted (Proxmox LXC) für Build-Jobs
+**Runner:** Self-hosted (Proxmox LXC) für Build- und E2E-Jobs
 
 ```yaml
 # Manuell triggern (GitHub UI oder CLI)
-gh workflow run appliance-build.yml -f version=0.8.0
+gh workflow run appliance-build.yml -f version=0.10.0
 ```
 
-**Jobs:**
+**Jobs (4 jobs, separated for resilience):**
 
-| Job | Runner | Beschreibung |
-|-----|--------|--------------|
-| `validate` | ubuntu-latest | Packer Template validieren |
-| `build` | **self-hosted** | qcow2 Image mit Packer bauen (~22GB) |
-| `compress` | **self-hosted** | zstd komprimieren, in Parts splitten |
-| `release` | ubuntu-latest | Parts zu GitHub Release hochladen |
+| Job | Runner | Timeout | Description |
+|-----|--------|---------|-------------|
+| `validate` | ubuntu-latest | 10m | Validate Packer template + docker-compose |
+| `build` | **self-hosted** | 90m | Build qcow2, compress, upload as artifact |
+| `e2e-test` | **self-hosted** | 30m | Download artifact, create test VM, health checks |
+| `upload-release` | ubuntu-latest | 10m | Upload artifact to GitHub Release |
 
-**Warum Self-hosted?**
-- GitHub-hosted Runner haben nur ~14GB Disk (Image ist 22GB)
-- Packer braucht KVM/QEMU (nicht auf GitHub-hosted verfügbar)
-- Build braucht ~8GB RAM
+**Job Dependencies:**
+```
+validate → build → e2e-test → upload-release
+```
+
+**Benefits of Separation:**
+- E2E failure: Re-run only `e2e-test` (~10 min instead of ~50 min)
+- Build artifact stays in GitHub Artifacts for 7 days
+- Upload failure: Re-run only `upload-release` (~2 min)
+- Re-run command: `gh run rerun <run-id> --job e2e-test`
+
+**Why Self-hosted?**
+- GitHub-hosted runners only have ~14GB disk (image is 30GB+)
+- Packer requires KVM/QEMU (not available on GitHub-hosted)
+- Build requires ~32GB RAM for Ollama model download
 
 ### 2.7 Docker Build Workflow (`.github/workflows/docker-build.yml`)
 
@@ -260,9 +271,9 @@ gh workflow run docker-build.yml -f version=0.9.0
 | Ressource | Wert |
 |-----------|------|
 | OS | Debian 13 |
-| RAM | 8 GB |
-| CPU | 4 Cores |
-| Disk | 80 GB |
+| RAM | 32 GB |
+| CPU | 8 Cores |
+| Disk | 120 GB |
 | Labels | `self-hosted`, `Linux`, `X64`, `ova-builder` |
 
 **Security (Public Repo!):**
