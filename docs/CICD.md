@@ -206,30 +206,69 @@ ignoreLabels: |
 
 **Wichtig:** NICHT als Required Check konfiguriert (Dependabot-Kompatibilität).
 
-### 2.6 Appliance Build Workflow (`.github/workflows/appliance-build.yml`)
+### 2.6 Appliance Build Workflow (Layered Architecture)
 
 **Trigger:** `workflow_dispatch` (manuell) oder `release` (bei Tag)
 **Runner:** Self-hosted (Proxmox LXC) für Build- und E2E-Jobs
 **Artifact Storage:** MinIO (LAN) für schnellen Inter-Job Transfer
 
-```yaml
-# Manuell triggern (GitHub UI oder CLI)
-gh workflow run appliance-build.yml -f version=0.10.0
+#### Layered Build System
+
+Das Appliance-Build verwendet ein zweistufiges Layer-System:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    LAYERED BUILD ARCHITECTURE                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  BASE IMAGE (monatlich, ~40 min)     LAYER (pro Release, ~10 min)│
+│  ┌────────────────────────────┐     ┌────────────────────────┐  │
+│  │ • Debian 13 (Trixie)       │     │ • /opt/network-agent/  │  │
+│  │ • Docker CE                │     │ • docker-compose.yml   │  │
+│  │ • systemd-networkd         │ ──► │ • Docker Images Pull   │  │
+│  │ • SSH Hardening            │     │ • first-boot.sh        │  │
+│  │ • Kernel Tuning            │     │ • Firewall Rules       │  │
+│  │ • Ollama + Models (~20 GB) │     │ • VERSION file         │  │
+│  └────────────────────────────┘     └────────────────────────┘  │
+│           ↓                                   ↓                  │
+│  appliance-base/base-2026-01.qcow2.zst   network-agent-0.10.1.qcow2│
+│  (MinIO, persistent)                     (MinIO → GitHub Release) │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Jobs (3 jobs, MinIO for fast transfer):**
+**Vorteil:** Release-Builds dauern ~10 min statt ~50 min (Ollama bereits im Base Image)
+
+#### Workflows
+
+| Workflow | Trigger | Frequenz | Dauer | Output |
+|----------|---------|----------|-------|--------|
+| `base-appliance.yml` | Manuell / Cron (1. des Monats) | Monatlich | ~40 min | `appliance-base/` bucket |
+| `appliance-build.yml` | Release / Manuell | Pro Release | ~15 min | GitHub Release |
+
+```yaml
+# Base Image bauen (monatlich)
+gh workflow run base-appliance.yml -f base_version=2026-01
+
+# Layer Build (pro Release)
+gh workflow run appliance-build.yml -f version=0.10.1 -f base_version=latest
+```
+
+**Jobs (appliance-build.yml, 3 jobs, MinIO for fast transfer):**
 
 | Job | Runner | Timeout | Description |
 |-----|--------|---------|-------------|
-| `validate` | ubuntu-latest | 10m | Validate Packer template + docker-compose |
-| `build` | **self-hosted** | 90m | Build qcow2, compress, upload to MinIO |
+| `validate` | ubuntu-latest | 10m | Validate Packer templates + docker-compose |
+| `build` | **self-hosted** | 30m | Download base, build layer, upload to MinIO |
 | `e2e-test` | **self-hosted** | 30m | Download from MinIO, test VM, upload to Release |
 
 **Job Dependencies:**
 ```
 validate → build → e2e-test
-                      ↓
-              (on release: upload to GitHub Release)
+              ↓         ↓
+         (downloads   (on release: upload
+          base from    to GitHub Release)
+          MinIO)
 ```
 
 **MinIO Artifact Storage:**
@@ -237,9 +276,23 @@ validate → build → e2e-test
 | Aspekt | Wert |
 |--------|------|
 | Server | 10.0.0.165:9000 (Proxmox LXC 160) |
-| Bucket | `appliance-builds` |
-| Retention | 7 Tage (Lifecycle Policy) |
+| Buckets | `appliance-base` (persistent), `appliance-builds` (temp) |
+| Retention | Keine - Cleanup nach E2E-Job |
 | Transfer Speed | ~100 MB/s (LAN) vs ~5 MB/s (GitHub Artifacts) |
+
+**Bucket-Struktur:**
+```
+appliance-base/              # Persistent (manuelles Cleanup)
+  ├── base-2026-01.qcow2.zst
+  ├── base-latest.qcow2.zst  # Symlink to latest
+  └── SHA256SUMS-2026-01
+
+appliance-builds/            # Temporary (auto-cleanup nach E2E)
+  └── 0.10.1/
+      ├── *.part-*
+      ├── SHA256SUMS
+      └── install-network-agent.sh
+```
 
 **Secrets:**
 - `MINIO_ENDPOINT` - MinIO Server URL
@@ -247,8 +300,9 @@ validate → build → e2e-test
 - `MINIO_SECRET_KEY` - Secret Key
 
 **Benefits:**
+- Layered Build: ~10 min statt ~50 min pro Release
 - Inter-Job Transfer: 5 min statt 75 min (15x schneller)
-- E2E failure: Re-run only `e2e-test` (~10 min instead of ~50 min)
+- E2E failure: Re-run only `e2e-test` (~10 min)
 - Release Upload: Direkt vom E2E-Job nach erfolgreichem Test
 - Re-run command: `gh run rerun <run-id> --job e2e-test`
 
@@ -328,8 +382,8 @@ gh api /repos/obtFusi/network-agent/actions/runners --jq '.runners[]'
 | RAM | 2 GB |
 | CPU | 2 Cores |
 | Disk | 50 GB |
-| Bucket | `appliance-builds` |
-| Retention | 7 Tage |
+| Buckets | `appliance-base` (persistent), `appliance-builds` (temp) |
+| Retention | Keine (Cleanup nach E2E-Job)
 
 **Warum MinIO statt GitHub Artifacts?**
 
@@ -362,7 +416,8 @@ ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc rm --recursive --force loc
 |---------|--------|
 | MinIO nicht erreichbar | `pct start 160` auf Proxmox |
 | Upload fehlschlägt | Secrets prüfen, Netzwerk testen |
-| Bucket voll | Lifecycle Policy prüft (7d auto-delete) |
+| Bucket voll | `mc rm --recursive minio/appliance-builds/OLD_VERSION/` |
+| appliance-base voll | Alte Base-Images manuell löschen |
 | Credentials vergessen | `ssh root@10.0.0.69 "pct exec 160 -- cat /etc/minio.env"` |
 
 ---

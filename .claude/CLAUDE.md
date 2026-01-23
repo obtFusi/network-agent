@@ -27,12 +27,14 @@
 | **Kanban-View** | `for s in backlog ready in-progress review; do echo "=== $s ===" && gh issue list --label "status:$s"; done` |
 | **Issue starten** | `gh issue edit <N> --remove-label "status:ready" --add-label "status:in-progress"` |
 | **Issue ready** | `gh issue edit <N> --remove-label "status:backlog" --add-label "status:ready"` |
-| **Appliance Build** | `gh workflow run appliance-build.yml -f version=X.Y.Z` |
+| **Base Image Build** | `gh workflow run base-appliance.yml -f base_version=2026-01` |
+| **Appliance Build** | `gh workflow run appliance-build.yml -f version=X.Y.Z -f base_version=latest` |
 | **Docker Image Push** | `gh workflow run docker-build.yml -f version=X.Y.Z` |
 | **Runner Status** | `ssh root@github-runner systemctl status github-runner` |
 | **Runner Logs** | `ssh root@github-runner journalctl -u github-runner -f` |
 | **MinIO Status** | `ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"` |
-| **MinIO Bucket** | `ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-builds/"` |
+| **MinIO Base Images** | `ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-base/"` |
+| **MinIO Build Artifacts** | `ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-builds/"` |
 
 ---
 
@@ -432,12 +434,16 @@ GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
                      └─ Docker Compose Status
 ```
 
-**Appliance Build Phasen (3 Jobs mit MinIO):**
+**Layered Build System:**
+- `base-appliance.yml` - Monatlich: Debian + Docker + Ollama (~40 min) → `appliance-base/`
+- `appliance-build.yml` - Pro Release: Layer auf Base Image (~15 min) → GitHub Release
+
+**appliance-build.yml Phasen (3 Jobs mit MinIO):**
 1. `validate` - Templates prüfen (ubuntu-latest, ~20s)
-2. `build` - qcow2 bauen + komprimieren + zu MinIO uploaden (self-hosted, ~45 min)
+2. `build` - Base Image downloaden + Layer bauen + zu MinIO uploaden (self-hosted, ~15 min)
 3. `e2e-test` - Von MinIO downloaden + Test-VM + bei Release: zu GitHub Release uploaden (self-hosted, ~15 min)
 
-**Vorteil:** E2E-Fehler → nur Job 3 re-run (~15 min statt ~50 min)
+**Vorteil:** Release-Build ~15 min statt ~50 min (Ollama bereits im Base Image)
 
 ### MinIO Artifact Storage
 
@@ -446,9 +452,13 @@ GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
 | Container | `minio` (Proxmox LXC 160) |
 | IP | `10.0.0.165` |
 | Ports | 9000 (API), 9001 (Web Console) |
-| Bucket | `appliance-builds` |
-| Retention | 7 Tage (Lifecycle Policy) |
+| Buckets | `appliance-base` (persistent), `appliance-builds` (temp) |
+| Retention | Keine (Cleanup nach E2E-Job) |
 | Status | `ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"` |
+
+**Bucket-Struktur:**
+- `appliance-base/` - Base Images (persistent, manuelles Cleanup)
+- `appliance-builds/` - Build Artifacts (temp, auto-cleanup nach E2E)
 
 **Warum MinIO?**
 - GitHub Artifact Upload: ~5 MB/s (Rate-Limited) → 27 GB = 75 min
