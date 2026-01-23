@@ -50,9 +50,12 @@ jobs:
         with:
           version: ${{ env.PACKER_VERSION }}
 
-      - name: Initialize Packer
+      - name: Initialize Packer plugins
         working-directory: infrastructure/packer
-        run: packer init .
+        run: |
+          # Init each template separately to avoid variable conflicts
+          packer init layer.pkr.hcl
+          packer init base.pkr.hcl
 
       - name: Validate Packer templates
         working-directory: infrastructure/packer
@@ -149,7 +152,7 @@ jobs:
 
       - name: Initialize Packer
         working-directory: infrastructure/packer
-        run: packer init .
+        run: packer init layer.pkr.hcl
 
       # ═══════════════════════════════════════════════════════════
       # BUILD PHASE (Layered: download base → build layer)
