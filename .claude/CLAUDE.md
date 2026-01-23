@@ -31,6 +31,8 @@
 | **Docker Image Push** | `gh workflow run docker-build.yml -f version=X.Y.Z` |
 | **Runner Status** | `ssh root@github-runner systemctl status github-runner` |
 | **Runner Logs** | `ssh root@github-runner journalctl -u github-runner -f` |
+| **MinIO Status** | `ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"` |
+| **MinIO Bucket** | `ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-builds/"` |
 
 ---
 
@@ -430,13 +432,28 @@ GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
                      └─ Docker Compose Status
 ```
 
-**Appliance Build Phasen (4 separate Jobs):**
+**Appliance Build Phasen (3 Jobs mit MinIO):**
 1. `validate` - Templates prüfen (ubuntu-latest, ~20s)
-2. `build` - qcow2 bauen + komprimieren (self-hosted, ~40 min)
-3. `e2e-test` - Test-VM + Health Checks (self-hosted, ~10 min)
-4. `upload-release` - Zu Release hochladen (ubuntu-latest, ~5 min)
+2. `build` - qcow2 bauen + komprimieren + zu MinIO uploaden (self-hosted, ~45 min)
+3. `e2e-test` - Von MinIO downloaden + Test-VM + bei Release: zu GitHub Release uploaden (self-hosted, ~15 min)
 
-**Vorteil:** E2E-Fehler → nur Job 3 re-run (~10 min statt ~50 min)
+**Vorteil:** E2E-Fehler → nur Job 3 re-run (~15 min statt ~50 min)
+
+### MinIO Artifact Storage
+
+| Info | Wert |
+|------|------|
+| Container | `minio` (Proxmox LXC 160) |
+| IP | `10.0.0.165` |
+| Ports | 9000 (API), 9001 (Web Console) |
+| Bucket | `appliance-builds` |
+| Retention | 7 Tage (Lifecycle Policy) |
+| Status | `ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"` |
+
+**Warum MinIO?**
+- GitHub Artifact Upload: ~5 MB/s (Rate-Limited) → 27 GB = 75 min
+- MinIO im LAN: ~100 MB/s → 27 GB = 5 min
+- **15x schnellerer Inter-Job Transfer**
 
 ---
 
