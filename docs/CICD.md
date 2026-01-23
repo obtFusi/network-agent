@@ -210,36 +210,53 @@ ignoreLabels: |
 
 **Trigger:** `workflow_dispatch` (manuell) oder `release` (bei Tag)
 **Runner:** Self-hosted (Proxmox LXC) für Build- und E2E-Jobs
+**Artifact Storage:** MinIO (LAN) für schnellen Inter-Job Transfer
 
 ```yaml
 # Manuell triggern (GitHub UI oder CLI)
 gh workflow run appliance-build.yml -f version=0.10.0
 ```
 
-**Jobs (4 jobs, separated for resilience):**
+**Jobs (3 jobs, MinIO for fast transfer):**
 
 | Job | Runner | Timeout | Description |
 |-----|--------|---------|-------------|
 | `validate` | ubuntu-latest | 10m | Validate Packer template + docker-compose |
-| `build` | **self-hosted** | 90m | Build qcow2, compress, upload as artifact |
-| `e2e-test` | **self-hosted** | 30m | Download artifact, create test VM, health checks |
-| `upload-release` | ubuntu-latest | 10m | Upload artifact to GitHub Release |
+| `build` | **self-hosted** | 90m | Build qcow2, compress, upload to MinIO |
+| `e2e-test` | **self-hosted** | 30m | Download from MinIO, test VM, upload to Release |
 
 **Job Dependencies:**
 ```
-validate → build → e2e-test → upload-release
+validate → build → e2e-test
+                      ↓
+              (on release: upload to GitHub Release)
 ```
 
-**Benefits of Separation:**
+**MinIO Artifact Storage:**
+
+| Aspekt | Wert |
+|--------|------|
+| Server | 10.0.0.165:9000 (Proxmox LXC 160) |
+| Bucket | `appliance-builds` |
+| Retention | 7 Tage (Lifecycle Policy) |
+| Transfer Speed | ~100 MB/s (LAN) vs ~5 MB/s (GitHub Artifacts) |
+
+**Secrets:**
+- `MINIO_ENDPOINT` - MinIO Server URL
+- `MINIO_ACCESS_KEY` - Access Key
+- `MINIO_SECRET_KEY` - Secret Key
+
+**Benefits:**
+- Inter-Job Transfer: 5 min statt 75 min (15x schneller)
 - E2E failure: Re-run only `e2e-test` (~10 min instead of ~50 min)
-- Build artifact stays in GitHub Artifacts for 7 days
-- Upload failure: Re-run only `upload-release` (~2 min)
+- Release Upload: Direkt vom E2E-Job nach erfolgreichem Test
 - Re-run command: `gh run rerun <run-id> --job e2e-test`
 
-**Why Self-hosted?**
+**Why Self-hosted + MinIO?**
 - GitHub-hosted runners only have ~14GB disk (image is 30GB+)
 - Packer requires KVM/QEMU (not available on GitHub-hosted)
 - Build requires ~32GB RAM for Ollama model download
+- GitHub Artifact upload rate-limited to ~5 MB/s (27GB = 75 min)
 
 ### 2.7 Docker Build Workflow (`.github/workflows/docker-build.yml`)
 
@@ -298,6 +315,55 @@ gh api /repos/obtFusi/network-agent/actions/runners --jq '.runners[]'
 **Scripts:**
 - `infrastructure/scripts/create-runner-lxc.sh` - LXC Setup auf Proxmox
 - `infrastructure/scripts/runner-wrapper.sh` - Ephemeral Loop mit Token-Refresh
+
+### 2.9 MinIO Artifact Storage
+
+**Location:** Proxmox LXC 160 (`minio`)
+**IP:** 10.0.0.165
+**Ports:** 9000 (API), 9001 (Console)
+
+| Ressource | Wert |
+|-----------|------|
+| OS | Debian 12 |
+| RAM | 2 GB |
+| CPU | 2 Cores |
+| Disk | 50 GB |
+| Bucket | `appliance-builds` |
+| Retention | 7 Tage |
+
+**Warum MinIO statt GitHub Artifacts?**
+
+| Aspekt | GitHub Artifacts | MinIO |
+|--------|------------------|-------|
+| Upload Speed | ~5 MB/s (Rate-Limited) | ~100 MB/s (LAN) |
+| 27 GB Upload | ~75 min | ~5 min |
+| Kosten | Gratis (2 GB limit) | Gratis (self-hosted) |
+| Kontrolle | GitHub managed | Selbst verwaltet |
+
+**Management:**
+
+```bash
+# MinIO Status prüfen
+ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"
+
+# Bucket-Inhalt anzeigen
+ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-builds/"
+
+# Manuelles Cleanup
+ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc rm --recursive --force local/appliance-builds/OLD_VERSION/"
+
+# Console (Web UI)
+# http://10.0.0.165:9001 (minioadmin / [siehe Secrets])
+```
+
+**Troubleshooting:**
+
+| Problem | Lösung |
+|---------|--------|
+| MinIO nicht erreichbar | `pct start 160` auf Proxmox |
+| Upload fehlschlägt | Secrets prüfen, Netzwerk testen |
+| Bucket voll | Lifecycle Policy prüft (7d auto-delete) |
+| Credentials vergessen | `ssh root@10.0.0.69 "pct exec 160 -- cat /etc/minio.env"` |
 
 ---
 
