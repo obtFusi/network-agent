@@ -193,7 +193,24 @@ build {
     ]
   }
 
-  # Step 7: Ollama + Models (takes ~20 min)
+  # Step 7a: Copy cached Ollama models from host (FAST: ~2min instead of 25min)
+  provisioner "file" {
+    source      = "/tmp/ollama-models.tar"
+    destination = "/tmp/ollama-models.tar"
+  }
+
+  # Step 7b: Extract and setup Ollama models
+  provisioner "shell" {
+    inline = [
+      "echo '=== Extracting cached Ollama models ==='",
+      "mkdir -p /tmp/ollama-cache",
+      "tar -xf /tmp/ollama-models.tar -C /tmp/ollama-cache",
+      "rm /tmp/ollama-models.tar",
+      "ls -lh /tmp/ollama-cache/"
+    ]
+  }
+
+  # Step 7c: Ollama + Models (uses cache if available)
   provisioner "shell" {
     scripts = [
       "scripts/03-pull-ollama-model.sh"
