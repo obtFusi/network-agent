@@ -62,11 +62,17 @@ jobs:
           docker compose -f infrastructure/docker/docker-compose.yml \
                         -f infrastructure/docker/docker-compose.online.yml config --quiet
 
-  build-and-test:
-    name: Build and Test
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BUILD JOB: Creates qcow2 image, compresses, splits, uploads as artifact
+  # ═══════════════════════════════════════════════════════════════════════════
+  build:
+    name: Build Appliance
     runs-on: self-hosted
     needs: validate
-    timeout-minutes: 120
+    timeout-minutes: 90
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      artifact-name: ${{ steps.version.outputs.ARTIFACT_NAME }}
     env:
       VERSION: ${{ inputs.version || github.ref_name }}
     steps:
@@ -106,28 +112,13 @@ jobs:
       # EARLY VALIDATION (fail fast before expensive build)
       # ═══════════════════════════════════════════════════════════
 
-      - name: Validate secrets and connectivity
-        env:
-          PVE_HOST: ${{ secrets.PVE_HOST }}
+      - name: Set version output
+        id: version
         run: |
-          # Check if PVE_HOST secret is configured
-          if [[ -z "$PVE_HOST" ]]; then
-            echo "::error::PVE_HOST secret is not configured!"
-            echo ""
-            echo "Please add the Proxmox host IP as a repository secret:"
-            echo "  gh secret set PVE_HOST --body '10.0.0.69'"
-            echo ""
-            exit 1
-          fi
-
-          # Check SSH connectivity to Proxmox
-          echo "Testing SSH connectivity to Proxmox ($PVE_HOST)..."
-          if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes root@$PVE_HOST "echo 'SSH OK'" 2>/dev/null; then
-            echo "::error::Cannot SSH to Proxmox host $PVE_HOST"
-            echo "Check: SSH key, firewall, Proxmox availability"
-            exit 1
-          fi
-          echo "✓ Proxmox connectivity validated"
+          VERSION_CLEAN="${VERSION#v}"
+          echo "VERSION=$VERSION_CLEAN" >> $GITHUB_OUTPUT
+          echo "ARTIFACT_NAME=appliance-${VERSION_CLEAN}" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION_CLEAN"
 
       - name: Install dependencies
         run: |
@@ -222,16 +213,94 @@ jobs:
           sed -i "s/VERSION:-0.4.0/VERSION:-${VERSION_CLEAN}/" infrastructure/packer/output/install-network-agent.sh
 
       # ═══════════════════════════════════════════════════════════
-      # E2E TEST PHASE (uses local files, no download needed)
+      # UPLOAD BUILD ARTIFACTS (for E2E test job)
       # ═══════════════════════════════════════════════════════════
 
-      - name: Create test VM
-        if: ${{ inputs.skip_test != true }}
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: appliance-${{ steps.version.outputs.VERSION }}
+          path: |
+            infrastructure/packer/output/*.part-*
+            infrastructure/packer/output/SHA256SUMS
+            infrastructure/packer/output/install-network-agent.sh
+          retention-days: 7
+          compression-level: 0  # Already compressed with zstd
+
+      - name: Cleanup build directory
+        if: always()
+        run: |
+          # Clean up after successful upload to free disk space
+          rm -rf infrastructure/packer/output/ || true
+          sudo fstrim -av || true
+          echo "Build artifacts uploaded and cleaned up"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # E2E TEST JOB: Downloads artifact, creates test VM, runs health checks
+  # Can be re-run independently without rebuilding (saves ~40 min)
+  # ═══════════════════════════════════════════════════════════════════════════
+  e2e-test:
+    name: E2E Test
+    runs-on: self-hosted
+    needs: build
+    if: ${{ inputs.skip_test != true }}
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      ARTIFACT_NAME: ${{ needs.build.outputs.artifact-name }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+
+      - uses: actions/checkout@v4
+
+      - name: Validate Proxmox connectivity
         env:
           PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
-          VERSION_CLEAN="${VERSION#v}"
+          # Check if PVE_HOST secret is configured
+          if [[ -z "$PVE_HOST" ]]; then
+            echo "::error::PVE_HOST secret is not configured!"
+            echo ""
+            echo "Please add the Proxmox host IP as a repository secret:"
+            echo "  gh secret set PVE_HOST --body '10.0.0.69'"
+            echo ""
+            exit 1
+          fi
 
+          # Check SSH connectivity to Proxmox
+          echo "Testing SSH connectivity to Proxmox ($PVE_HOST)..."
+          if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes root@$PVE_HOST "echo 'SSH OK'" 2>/dev/null; then
+            echo "::error::Cannot SSH to Proxmox host $PVE_HOST"
+            echo "Check: SSH key, firewall, Proxmox availability"
+            exit 1
+          fi
+          echo "✓ Proxmox connectivity validated"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: infrastructure/packer/output
+
+      - name: Verify downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -lh infrastructure/packer/output/
+          echo ""
+          echo "Verifying checksums..."
+          cd infrastructure/packer/output
+          sha256sum -c SHA256SUMS
+
+      - name: Create test VM
+        env:
+          PVE_HOST: ${{ secrets.PVE_HOST }}
+        run: |
           # Clean up any existing test VM first
           ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
@@ -272,7 +341,6 @@ jobs:
           ssh root@$PVE_HOST "rm -f $BUILD_TMP/network-agent-test.qcow2"
 
       - name: Wait for boot and get IP
-        if: ${{ inputs.skip_test != true }}
         id: vm-ip
         env:
           PVE_HOST: ${{ secrets.PVE_HOST }}
@@ -347,7 +415,6 @@ jobs:
           done
 
       - name: Configure and start services
-        if: ${{ inputs.skip_test != true }}
         run: |
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
@@ -369,7 +436,6 @@ jobs:
           EOF
 
       - name: Wait for services
-        if: ${{ inputs.skip_test != true }}
         run: |
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
           echo "Waiting for services..."
@@ -377,7 +443,6 @@ jobs:
           ssh -o StrictHostKeyChecking=no root@$VM_IP "docker compose -f /opt/network-agent/docker-compose.yml ps"
 
       - name: Run health checks
-        if: ${{ inputs.skip_test != true }}
         run: |
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
@@ -409,6 +474,9 @@ jobs:
           sleep 5
           ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
 
+          # Clean up downloaded artifacts
+          rm -rf infrastructure/packer/output/ || true
+
           # Reclaim disk space on runner (thin provisioned storage)
           echo "Running fstrim to reclaim disk space..."
           sudo fstrim -av || true
@@ -418,47 +486,54 @@ jobs:
         env:
           PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
-          # Only cleanup VM and temp files - KEEP build artifacts for investigation!
+          # Cleanup VM and temp files on Proxmox
           if [[ -n "$PVE_HOST" ]]; then
             ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
             ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
             ssh root@$PVE_HOST "rm -rf /root/build-tmp/network-agent*.qcow2* 2>/dev/null || true"
           fi
 
-          # DO NOT delete build artifacts - they took 35+ minutes to create!
-          # Artifacts are kept for:
-          # 1. Manual investigation of E2E failures
-          # 2. Manual upload if only upload step failed
-          # 3. Re-running E2E tests locally
+          # Clean up downloaded artifacts (they're still in GitHub Artifacts)
+          rm -rf infrastructure/packer/output/ || true
 
-          echo "::notice::Build artifacts preserved in infrastructure/packer/output/"
-          echo "To cleanup manually: rm -rf infrastructure/packer/output/"
+          echo "::notice::Build artifacts are preserved in GitHub Artifacts for 7 days"
+          echo "To re-run E2E test: gh run rerun <run-id> --job e2e-test"
 
-          # Reclaim thin-provisioned space (doesn't delete files)
+          # Reclaim thin-provisioned space
           sudo fstrim -av || true
-          echo "VM cleanup completed - artifacts preserved"
+          echo "VM cleanup completed"
 
-      # ═══════════════════════════════════════════════════════════
-      # UPLOAD (only after successful test)
-      # ═══════════════════════════════════════════════════════════
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+  # ═══════════════════════════════════════════════════════════════════════════
+  # UPLOAD JOB: Uploads artifacts to GitHub Release (only for releases)
+  # ═══════════════════════════════════════════════════════════════════════════
+  upload-release:
+    name: Upload to Release
+    runs-on: ubuntu-latest
+    needs: [build, e2e-test]
+    if: github.event_name == 'release'
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
         with:
-          name: appliance-${{ env.VERSION }}
-          path: |
-            infrastructure/packer/output/*.part-*
-            infrastructure/packer/output/SHA256SUMS
-            infrastructure/packer/output/install-network-agent.sh
-          retention-days: 7
+          egress-policy: audit
 
-      # Upload directly to release from self-hosted runner (avoids 26GB artifact download)
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: artifacts
+
+      - name: Verify artifacts
+        run: |
+          echo "Artifacts to upload:"
+          ls -lh artifacts/
+          cd artifacts && sha256sum -c SHA256SUMS
+
       - name: Upload to Release
-        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            infrastructure/packer/output/*.part-*
-            infrastructure/packer/output/SHA256SUMS
-            infrastructure/packer/output/install-network-agent.sh
+            artifacts/*.part-*
+            artifacts/SHA256SUMS
+            artifacts/install-network-agent.sh
           fail_on_unmatched_files: true
