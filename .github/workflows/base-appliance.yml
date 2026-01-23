@@ -133,11 +133,14 @@ jobs:
             ls -lh "$MODELS_DIR"
           fi
 
-          # Create tarball for fast transfer to VM
+          # Create tarball for fast transfer to VM (use persistent storage, not tmpfs)
           echo "📦 Creating model archive for VM transfer..."
+          ARCHIVE_PATH="/opt/ollama-cache/ollama-models.tar"
           cd "$CACHE_DIR"
-          tar -cf /tmp/ollama-models.tar models/
-          ls -lh /tmp/ollama-models.tar
+          tar -cf "$ARCHIVE_PATH" models/
+          ls -lh "$ARCHIVE_PATH"
+          # Symlink for packer to find it
+          ln -sf "$ARCHIVE_PATH" /tmp/ollama-models.tar
 
       - name: Initialize Packer
         working-directory: infrastructure/packer
