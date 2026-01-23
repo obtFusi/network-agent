@@ -123,26 +123,19 @@ jobs:
             ollama pull "$OLLAMA_MODEL"
             ollama pull "qwen3:4b-instruct-2507-q4_K_M"
 
-            # Copy models from default location to cache dir
-            if [[ -d "/usr/share/ollama/.ollama/models" ]]; then
-              cp -r /usr/share/ollama/.ollama/models/* "$MODELS_DIR/" || true
-            fi
+            # Copy models from default location to cache dir (needs sudo)
+            echo "Copying models to cache directory..."
+            sudo cp -r /usr/share/ollama/.ollama/models "$CACHE_DIR/"
+            sudo chown -R runner:runner "$CACHE_DIR"
 
             echo "✅ Models cached at $MODELS_DIR"
-            ls -lh "$MODELS_DIR" || echo "Models dir empty, checking default location"
-            ls -lh /usr/share/ollama/.ollama/models/ 2>/dev/null || true
+            ls -lh "$MODELS_DIR"
           fi
 
-          # Create tarball for fast transfer to VM (use actual models location)
+          # Create tarball for fast transfer to VM
           echo "📦 Creating model archive for VM transfer..."
-          if [[ -d "$MODELS_DIR" && -n "$(ls -A $MODELS_DIR 2>/dev/null)" ]]; then
-            cd "$CACHE_DIR"
-            tar -cf /tmp/ollama-models.tar models/
-          else
-            # Fallback: use default ollama location
-            cd /usr/share/ollama/.ollama
-            tar -cf /tmp/ollama-models.tar models/
-          fi
+          cd "$CACHE_DIR"
+          tar -cf /tmp/ollama-models.tar models/
           ls -lh /tmp/ollama-models.tar
 
       - name: Initialize Packer
