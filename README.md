@@ -2,102 +2,91 @@
 
 [![Version](https://img.shields.io/badge/version-0.10.0-blue.svg)](CHANGELOG.md)
 
-> **Für Entwickler:** [CI/CD-Dokumentation](docs/CICD.md) - Pipeline, GitHub Actions, Claude Code Skills
+> **For Developers:** [CI/CD Documentation](docs/CICD.md) - Pipeline, GitHub Actions, Claude Code Skills
 
-Ein KI-gesteuerter Netzwerk-Scanner. Statt komplizierte Terminal-Befehle zu lernen, stellst du einfach Fragen wie *"Welche Geräte sind in meinem Netzwerk?"* - der Agent erledigt den Rest.
+An AI-powered network scanner. Instead of learning complex terminal commands, just ask questions like *"What devices are on my network?"* - the agent handles the rest.
 
-## Breaking Change in v0.7.0
+## What does this tool do?
 
-> **Ab Version 0.7.0** sind alle CLI-Meldungen und der System-Prompt auf Englisch umgestellt.
->
-> **Warum?** Das Projekt ist auf GitHub öffentlich und soll international nutzbar sein.
->
-> **Du willst deutsche Antworten?** Füge am Ende von `config/prompts/system.md` hinzu:
-> ```
-> Always respond in German (Deutsch).
-> ```
+Network Agent combines:
+- **Natural Language**: Ask what you want to know in plain English
+- **AI Processing**: Any OpenAI-compatible API understands your request
+- **Network Tools**: nmap performs the actual scans
+- **Clear Answers**: Results are presented in an understandable format
 
-## Was macht dieses Tool?
-
-Der Network Agent kombiniert:
-- **Natürliche Sprache**: Du fragst auf Deutsch, was du wissen willst
-- **KI-Verarbeitung**: Jede OpenAI-kompatible API versteht deine Anfrage
-- **Netzwerk-Tools**: nmap führt den eigentlichen Scan durch
-- **Verständliche Antworten**: Die Ergebnisse werden für dich aufbereitet
-
-**Beispiel:**
+**Example:**
 ```
-> Welche Geräte sind im Netzwerk 192.168.1.0/24 online?
+> What devices are online in network 192.168.1.0/24?
 
-Ich habe 7 aktive Geräte gefunden:
+I found 7 active devices:
 - 192.168.1.1 (Router)
-- 192.168.1.10 (Desktop-PC)
+- 192.168.1.10 (Desktop PC)
 - 192.168.1.15 (Smartphone)
 ...
 ```
 
-## Unterstützte LLM Provider
+## Supported LLM Providers
 
-Network Agent funktioniert mit jeder **OpenAI-kompatiblen API**. Das bedeutet:
+Network Agent works with any **OpenAI-compatible API**. This includes:
 
-| Provider | API Endpoint | Beispiel Models |
+| Provider | API Endpoint | Example Models |
 |----------|-------------|-----------------|
 | [OpenAI](https://openai.com) | `https://api.openai.com/v1` | gpt-4, gpt-3.5-turbo |
 | [Venice.ai](https://venice.ai) | `https://api.venice.ai/api/v1` | llama-3.3-70b, mistral-large |
 | [Together.ai](https://together.ai) | `https://api.together.xyz/v1` | llama-3-70b, mixtral-8x7b |
 | [Groq](https://groq.com) | `https://api.groq.com/openai/v1` | llama-3.3-70b, mixtral-8x7b |
 | [Ollama](https://ollama.com) | `http://localhost:11434/v1` | llama3, mistral, codellama |
-| [LM Studio](https://lmstudio.ai) | `http://localhost:1234/v1` | Beliebige lokale Models |
+| [LM Studio](https://lmstudio.ai) | `http://localhost:1234/v1` | Any local models |
 
-**Voraussetzung:** Der Provider muss die [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) mit Tool/Function Calling unterstützen.
+**Requirement:** The provider must support the [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) with Tool/Function Calling.
 
-## Voraussetzungen
+## Prerequisites
 
 1. **Docker** - [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)
-2. **API Key** von einem unterstützten Provider (siehe oben)
+2. **API Key** from a supported provider (see above)
 3. **Git** (optional) - [Download Git](https://git-scm.com/downloads)
 
 ## Installation
 
-### 1. Repository herunterladen
+### 1. Download the repository
 
 ```bash
 git clone https://github.com/obtFusi/network-agent.git
 cd network-agent
 ```
 
-Oder: [ZIP herunterladen](https://github.com/obtFusi/network-agent/archive/refs/heads/main.zip) und entpacken.
+Or: [Download ZIP](https://github.com/obtFusi/network-agent/archive/refs/heads/main.zip) and extract.
 
-### 2. LLM Provider konfigurieren
+### 2. Configure LLM Provider
 
-**Schritt A: API Key setzen**
+**Step A: Set API Key**
 
-Kopiere die Vorlage und trage deinen API Key ein:
+Copy the template and enter your API key:
 
 ```bash
 cp .env.example .env
 ```
 
-Bearbeite `.env`:
+Edit `.env`:
 ```
-LLM_API_KEY=dein_api_key_hier
+LLM_API_KEY=your_api_key_here
 ```
 
-**Schritt B: Provider und Model konfigurieren**
+**Step B: Configure Provider and Model**
 
-Bearbeite `config/settings.yaml`:
+Edit `config/settings.yaml`:
 
 ```yaml
 llm:
   provider:
-    model: "gpt-4"                        # <-- Dein Model
-    base_url: "https://api.openai.com/v1" # <-- Deine API URL
+    model: "gpt-4"                        # <-- Your model
+    base_url: "https://api.openai.com/v1" # <-- Your API URL
     temperature: 0.7
     max_tokens: 4096
 ```
 
 <details>
-<summary><strong>Beispiel-Konfigurationen für verschiedene Provider</strong></summary>
+<summary><strong>Example configurations for different providers</strong></summary>
 
 **OpenAI:**
 ```yaml
@@ -111,172 +100,172 @@ model: "llama-3.3-70b"
 base_url: "https://api.venice.ai/api/v1"
 ```
 
-**Groq (schnell & günstig):**
+**Groq (fast & affordable):**
 ```yaml
 model: "llama-3.3-70b-versatile"
 base_url: "https://api.groq.com/openai/v1"
 ```
 
-**Ollama (lokal):**
+**Ollama (local):**
 ```yaml
 model: "llama3"
 base_url: "http://host.docker.internal:11434/v1"
 ```
-*Hinweis: `host.docker.internal` erlaubt Docker den Zugriff auf Host-Services*
+*Note: `host.docker.internal` allows Docker to access host services*
 
 </details>
 
 <details>
-<summary><strong>Scan-Einstellungen anpassen (Optional)</strong></summary>
+<summary><strong>Customize scan settings (Optional)</strong></summary>
 
-**Bestimmte Geräte vom Scan ausschließen:**
+**Exclude specific devices from scans:**
 
-Du willst bestimmte IPs nicht scannen (z.B. kritische Server, Drucker)? Füge sie in `config/settings.yaml` hinzu:
+Want to exclude certain IPs from scanning (e.g., critical servers, printers)? Add them to `config/settings.yaml`:
 
 ```yaml
 scan:
   exclude_ips:
-    - "192.168.1.1"       # Router nicht scannen
-    - "192.168.1.100"     # NAS ausschließen
-    - "10.0.0.0/24"       # Ganzes Management-Netz ignorieren
+    - "192.168.1.1"       # Don't scan router
+    - "192.168.1.100"     # Exclude NAS
+    - "10.0.0.0/24"       # Ignore entire management network
 ```
 
-**Scan-Timeout erhöhen:**
+**Increase scan timeout:**
 
-Bei langsamen Netzwerken oder vielen Hosts kann der Scan abbrechen. Erhöhe das Timeout:
+For slow networks or many hosts, the scan might timeout. Increase the limit:
 
 ```yaml
 scan:
-  timeout: 300  # 5 Minuten statt Standard 2 Minuten
+  timeout: 300  # 5 minutes instead of default 2 minutes
 ```
 
-**Größere Netzwerke scannen:**
+**Scan larger networks:**
 
-Standardmäßig sind Port-Scans auf /24 (256 Hosts) begrenzt. Für größere Netze:
+By default, port scans are limited to /24 (256 hosts). For larger networks:
 
 ```yaml
 scan:
-  max_hosts_portscan: 1024  # Erlaubt /22 Netzwerke
+  max_hosts_portscan: 1024  # Allows /22 networks
 ```
 
-*Hinweis: Größere Scans dauern entsprechend länger!*
+*Note: Larger scans take correspondingly longer!*
 
 </details>
 
-### 3. Docker Image erstellen
+### 3. Build Docker Image
 
 ```bash
 docker build -t network-agent:latest .
 ```
 
-### 4. Agent starten
+### 4. Start the Agent
 
-**Mit Web-Suche (empfohlen):**
+**With Web Search (recommended):**
 
 ```bash
-# Linux (LAN-Scans + Web-Suche):
+# Linux (LAN scans + web search):
 docker compose up
 
-# macOS/Windows (Web-Suche, eingeschränkte Netzwerk-Scans):
+# macOS/Windows (web search, limited network scans):
 docker compose -f docker-compose.macos.yml up
 ```
 
-**Ohne Web-Suche (wie bisher):**
+**Without Web Search (classic mode):**
 
 ```bash
 # Linux:
 docker run -it --rm --network host --env-file .env network-agent:latest
 
-# Windows mit WSL2:
+# Windows with WSL2:
 docker run -it --rm --network host --env-file .env network-agent:latest
 
-# Windows ohne WSL / macOS:
+# Windows without WSL / macOS:
 docker run -it --rm --env-file .env network-agent:latest
 ```
 
-> **Hinweis:** Docker Compose startet automatisch SearXNG für Web-Suchen. Ohne `--network host` ist der LAN-Scan eingeschränkt.
+> **Note:** Docker Compose automatically starts SearXNG for web searches. Without `--network host`, LAN scanning is limited.
 
 ### Alternative: Proxmox Appliance
 
-Für eine schlüsselfertige Lösung gibt es eine vorkonfigurierte **Proxmox VM** mit allem vorinstalliert:
+For a turnkey solution, there's a preconfigured **Proxmox VM** with everything preinstalled:
 
 <details>
-<summary><strong>One-Click Installation auf Proxmox</strong></summary>
+<summary><strong>One-Click Installation on Proxmox</strong></summary>
 
-**Was ist enthalten?**
-- Network Agent (vorinstalliert)
-- Ollama mit Qwen3 (lokales LLM, kein API-Key nötig)
-  - **Standard:** Qwen3 4B Instruct (~3GB, optimiert für CPU-only)
-  - **Optional:** Qwen3 30B-A3B (~20GB, bessere Qualität bei mehr RAM)
+**What's included?**
+- Network Agent (preinstalled)
+- Ollama with Qwen3 (local LLM, no API key needed)
+  - **Standard:** Qwen3 4B Instruct (~3GB, optimized for CPU-only)
+  - **Optional:** Qwen3 30B-A3B (~20GB, better quality with more RAM)
 - Caddy Reverse Proxy (HTTPS + Basic Auth)
-- PostgreSQL (Datenbank)
-- Offline-fähig (keine externen Dependencies zur Laufzeit)
+- PostgreSQL (Database)
+- Offline-capable (no external dependencies at runtime)
 
-**Systemanforderungen:**
+**System Requirements:**
 
-| Modus | RAM | CPU | Disk | Model |
-|-------|-----|-----|------|-------|
+| Mode | RAM | CPU | Disk | Model |
+|------|-----|-----|------|-------|
 | Standard (CPU) | 8-16 GB | 4+ Cores | 50 GB | Qwen3 4B Instruct |
 | High-Quality | 24-32 GB | 4-8 Cores | 100 GB | Qwen3 30B-A3B |
 
 **Installation (One-Click):**
 
 ```bash
-# Auf dem Proxmox-Host ausführen:
+# Run on the Proxmox host:
 curl -sSL https://github.com/obtFusi/network-agent/releases/latest/download/install-network-agent.sh | bash -s -- 200
 
-# Oder mit benutzerdefiniertem Storage:
+# Or with custom storage:
 curl -sSL https://github.com/obtFusi/network-agent/releases/latest/download/install-network-agent.sh | bash -s -- 200 ceph-pool
 ```
 
-Das Script:
-1. Lädt das Image (~8GB komprimiert, 14 Parts)
-2. Verifiziert SHA256 Checksums
-3. Dekomprimiert zu ~22GB qcow2
-4. Erstellt VM 200 mit optimalen Einstellungen
+The script:
+1. Downloads the image (~8GB compressed, 14 parts)
+2. Verifies SHA256 checksums
+3. Decompresses to ~22GB qcow2
+4. Creates VM 200 with optimal settings
 5. Ready to start!
 
-**Manueller Download:**
+**Manual Download:**
 
 ```bash
-# Alle Parts + Checksums herunterladen
+# Download all parts + checksums
 VERSION="0.10.0"
 for part in aa ab ac ad ae af ag ah ai aj ak al am an; do
   wget "https://github.com/obtFusi/network-agent/releases/download/v${VERSION}/network-agent-${VERSION}.qcow2.zst.part-${part}"
 done
 wget "https://github.com/obtFusi/network-agent/releases/download/v${VERSION}/SHA256SUMS"
 
-# Checksums verifizieren (WICHTIG!)
+# Verify checksums (IMPORTANT!)
 sha256sum -c SHA256SUMS
 
-# Zusammenfügen und dekomprimieren
+# Combine and decompress
 cat network-agent-${VERSION}.qcow2.zst.part-* | zstd -d -o network-agent.qcow2
 
-# VM erstellen
+# Create VM
 qm create 200 --name network-agent --memory 16384 --cores 4 --cpu host
 qm importdisk 200 network-agent.qcow2 local-lvm --format qcow2
 qm set 200 --scsi0 local-lvm:vm-200-disk-0 --boot order=scsi0
 qm set 200 --net0 virtio,bridge=vmbr0
 ```
 
-**Erster Start:**
+**First Boot:**
 
 ```bash
 qm start 200
 qm terminal 200
 ```
 
-Beim ersten Login:
-1. Automatischer First-Boot startet
-2. Neues Root-Passwort setzen (Pflicht!)
-3. Web-Credentials werden generiert und angezeigt
-4. Services starten automatisch
+On first login:
+1. Automatic first-boot starts
+2. Set new root password (required!)
+3. Web credentials are generated and displayed
+4. Services start automatically
 
-**Zugriff:**
-- Web UI: `https://<VM-IP>` (Credentials aus First-Boot)
+**Access:**
+- Web UI: `https://<VM-IP>` (credentials from first-boot)
 - SSH: `ssh root@<VM-IP>`
 
-**Scan-Modus (Host-Network für L2/L3):**
+**Scan Mode (Host Network for L2/L3):**
 
 ```bash
 ssh root@<VM-IP>
@@ -285,7 +274,7 @@ docker compose down
 docker compose -f docker-compose.yml -f docker-compose.scan-mode.yml up -d
 ```
 
-**Online-Modus (mit Web-Suche via SearXNG):**
+**Online Mode (with Web Search via SearXNG):**
 
 ```bash
 ssh root@<VM-IP>
@@ -300,9 +289,9 @@ docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
 
 </details>
 
-## Verwendung
+## Usage
 
-Nach dem Start siehst du:
+After starting, you'll see:
 ```
 Network Agent starting...
    Model: gpt-4
@@ -312,164 +301,164 @@ Network Agent starting...
 >
 ```
 
-### Was kann ich fragen?
+### What can I ask?
 
-**Geräte im Netzwerk finden:**
-- `Welche Geräte sind im Netzwerk 192.168.1.0/24?`
-- `Scanne mein Heimnetzwerk 192.168.178.0/24`
-- `Wer ist gerade online?` *(wenn du vorher ein Netzwerk gescannt hast)*
-- `Zeig mir alle aktiven Hosts in 10.0.0.0/24`
+**Find devices on the network:**
+- `What devices are on network 192.168.1.0/24?`
+- `Scan my home network 192.168.178.0/24`
+- `Who is currently online?` *(if you've scanned a network before)*
+- `Show me all active hosts in 10.0.0.0/24`
 
-**DNS-Abfragen:**
-- `Welche IP hat example.com?`
-- `Zeig mir die MX-Records von gmail.com`
-- `Reverse DNS für 8.8.8.8`
-- `Welcher Nameserver ist für heise.de zuständig?`
+**DNS queries:**
+- `What IP does example.com have?`
+- `Show me the MX records for gmail.com`
+- `Reverse DNS for 8.8.8.8`
+- `Which nameserver is responsible for heise.de?`
 
-> **Gut zu wissen:**
-> - MX = Mailserver, NS = Nameserver, TXT = Texteinträge (z.B. SPF)
-> - "Reverse DNS" findet den Hostnamen zu einer IP-Adresse
-> - DNS-Abfragen funktionieren auch für öffentliche Domains
+> **Good to know:**
+> - MX = Mail servers, NS = Nameservers, TXT = Text records (e.g., SPF)
+> - "Reverse DNS" finds the hostname for an IP address
+> - DNS queries also work for public domains
 
-**Port-Scans:**
-- `Scanne die Ports 22, 80, 443 auf 192.168.1.1`
-- `Welche Ports sind auf dem Router offen?`
-- `Prüfe Ports 1-1000 auf 192.168.1.10`
-- `Schneller Portscan auf 192.168.1.0/24` *(mit T4 Timing)*
+**Port scans:**
+- `Scan ports 22, 80, 443 on 192.168.1.1`
+- `What ports are open on the router?`
+- `Check ports 1-1000 on 192.168.1.10`
+- `Quick port scan on 192.168.1.0/24` *(with T4 timing)*
 
-> **Gut zu wissen:**
-> - Ohne Port-Angabe werden die 100 häufigsten Ports geprüft
-> - Du kannst einzelne Ports (`22,80,443`) oder Bereiche (`1-1000`) angeben
-> - "Schnell" oder "langsam" steuert die Scan-Geschwindigkeit
-> - Manche Geräte antworten nicht auf Ping - sag dann "auch wenn kein Ping"
+> **Good to know:**
+> - Without port specification, the 100 most common ports are checked
+> - You can specify individual ports (`22,80,443`) or ranges (`1-1000`)
+> - "Fast" or "slow" controls scan speed
+> - Some devices don't respond to ping - then say "even without ping"
 
-**Service-Erkennung:**
-- `Welche Services laufen auf 192.168.1.1?`
-- `Erkenne die Versionen auf dem Router`
-- `Was für ein Webserver läuft auf 192.168.1.10:80?`
-- `Gründliche Service-Erkennung auf 192.168.1.5` *(mit hoher Intensität)*
+**Service detection:**
+- `What services are running on 192.168.1.1?`
+- `Detect versions on the router`
+- `What web server is running on 192.168.1.10:80?`
+- `Thorough service detection on 192.168.1.5` *(with high intensity)*
 
-> **Gut zu wissen:**
-> - Erkennt Service-Namen und Versionen (z.B. "OpenSSH 8.9", "Apache 2.4")
-> - Langsamer als Port-Scan, dafür mehr Details
-> - "Gründlich" oder "intensiv" für bessere Erkennung, "schnell" für oberflächlich
-> - Ohne Port-Angabe werden die 20 häufigsten Ports geprüft
+> **Good to know:**
+> - Detects service names and versions (e.g., "OpenSSH 8.9", "Apache 2.4")
+> - Slower than port scan, but more details
+> - "Thorough" or "intensive" for better detection, "quick" for superficial
+> - Without port specification, the 20 most common ports are checked
 
-**Web-Suche (nur mit Docker Compose):**
-- `Suche nach nmap scripting Dokumentation`
-- `Was ist SearXNG?`
-- `Finde Tutorials zu Python Netzwerk-Programmierung`
+**Web search (only with Docker Compose):**
+- `Search for nmap scripting documentation`
+- `What is SearXNG?`
+- `Find tutorials on Python network programming`
 
-> **Gut zu wissen:**
-> - Web-Suche funktioniert nur mit Docker Compose (`docker compose up`)
-> - Alle Suchanfragen bleiben lokal (kein externer API-Key nötig)
-> - Kategorien verfügbar: general, images, news, science, it, files
+> **Good to know:**
+> - Web search only works with Docker Compose (`docker compose up`)
+> - All search queries stay local (no external API key needed)
+> - Categories available: general, images, news, science, it, files
 
-**Folgefragen stellen:**
-- `Welche davon haben offene Ports?`
-- `Was läuft auf 192.168.1.10?`
-- `Gibt es Webserver im Netzwerk?`
+**Follow-up questions:**
+- `Which of these have open ports?`
+- `What's running on 192.168.1.10?`
+- `Are there web servers on the network?`
 
-**Tipps:**
-- Für Netzwerk-Scans brauchst du eine Netzwerk-Angabe (z.B. `192.168.1.0/24`)
-- DNS-Abfragen funktionieren mit jedem Hostnamen oder IP
-- Der Agent merkt sich vorherige Ergebnisse - du kannst Folgefragen stellen
-- Formuliere so, wie du einen Kollegen fragen würdest
+**Tips:**
+- For network scans, you need a network specification (e.g., `192.168.1.0/24`)
+- DNS queries work with any hostname or IP
+- The agent remembers previous results - you can ask follow-up questions
+- Phrase it like you would ask a colleague
 
-### Befehle
-- `/help` - Verfügbare Befehle anzeigen
-- `/tools` - Verfügbare Tools auflisten (Name + Beschreibung)
-- `/config` - LLM-Konfiguration anzeigen (Model, Base URL, Context-Limit)
-- `/status` - Session-Statistik anzeigen (Tokens, Context-Auslastung, Truncations)
-- `/version` - Version anzeigen
-- `/clear` - Session-Speicher löschen
-- `/exit` - Beenden
+### Commands
+- `/help` - Show available commands
+- `/tools` - List available tools (name + description)
+- `/config` - Show LLM configuration (model, base URL, context limit)
+- `/status` - Show session statistics (tokens, context usage, truncations)
+- `/version` - Show version
+- `/clear` - Clear session memory
+- `/exit` - Exit
 
-## Plattform-Kompatibilität
+## Platform Compatibility
 
-| System | LAN-Scan | Methode | Wie starten? |
-|--------|----------|---------|--------------|
-| Linux | Vollständig | ICMP Ping | `--network host` |
-| Windows + WSL2 | Vollständig | ICMP Ping | Im WSL-Terminal |
-| Windows (PowerShell) | Ja | TCP-Connect | Normal starten |
-| macOS | Ja | TCP-Connect | Normal starten |
+| System | LAN Scan | Method | How to start? |
+|--------|----------|--------|---------------|
+| Linux | Full | ICMP Ping | `--network host` |
+| Windows + WSL2 | Full | ICMP Ping | In WSL terminal |
+| Windows (PowerShell) | Yes | TCP-Connect | Start normally |
+| macOS | Yes | TCP-Connect | Start normally |
 
-**Automatische Erkennung:** Der Agent erkennt automatisch, ob ICMP-Ping möglich ist. Falls nicht (Docker auf Windows/macOS), wird automatisch TCP-Connect Scan verwendet.
+**Automatic Detection:** The agent automatically detects if ICMP ping is possible. If not (Docker on Windows/macOS), TCP-Connect scan is used automatically.
 
-## Sicherheit
+## Security
 
-Der Network Agent ist für **lokale Netzwerk-Analyse** konzipiert:
+Network Agent is designed for **local network analysis**:
 
-| Was ist erlaubt? | Was ist blockiert? |
-|------------------|-------------------|
-| Private IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) | Öffentliche IPs (Internet) |
-| Loopback (127.0.0.1) | IPv6-Adressen |
-| Dein lokales Netzwerk | Link-Local (169.254.x.x) |
+| What's allowed? | What's blocked? |
+|-----------------|-----------------|
+| Private IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x) | Public IPs (Internet) |
+| Loopback (127.0.0.1) | IPv6 addresses |
+| Your local network | Link-Local (169.254.x.x) |
 
-**Warum diese Einschränkungen?**
-- Verhindert versehentliches Scannen fremder Systeme im Internet
-- Schützt vor Missbrauch als Angriffswerkzeug
-- Fokussiert auf den eigentlichen Anwendungsfall: Heimnetzwerk-Analyse
+**Why these restrictions?**
+- Prevents accidental scanning of external systems on the internet
+- Protects against misuse as an attack tool
+- Focuses on the actual use case: home network analysis
 
-**Du willst trotzdem ein bestimmtes Netzwerk scannen?**
-Konfiguriere Ausnahmen in `config/settings.yaml` (siehe Scan-Einstellungen oben).
+**Want to scan a specific network anyway?**
+Configure exceptions in `config/settings.yaml` (see scan settings above).
 
 <details>
-<summary><strong>Technische Details zu den Tools</strong></summary>
+<summary><strong>Technical details about the tools</strong></summary>
 
-### Host-Limits
+### Host Limits
 
-| Tool | Max Hosts | Netzwerk | Grund |
-|------|-----------|----------|-------|
-| ping_sweep | 65.536 | /16 | Schnell: 1 Probe pro Host |
-| port_scanner | 256 | /24 | Langsam: viele Probes pro Port |
-| service_detect | 256 | /24 | Sehr langsam: mehrere Probes pro Service |
-| dns_lookup | 1 | Einzeln | DNS-Abfragen sind immer einzeln |
+| Tool | Max Hosts | Network | Reason |
+|------|-----------|---------|--------|
+| ping_sweep | 65,536 | /16 | Fast: 1 probe per host |
+| port_scanner | 256 | /24 | Slow: many probes per port |
+| service_detect | 256 | /24 | Very slow: multiple probes per service |
+| dns_lookup | 1 | Single | DNS queries are always individual |
 
-**Warum der Unterschied?** Discovery (ping_sweep) sendet nur einen Probe pro Host und ist deshalb schnell. Port- und Service-Scans senden viele Probes pro Host und würden bei großen Netzwerken sehr lange dauern.
+**Why the difference?** Discovery (ping_sweep) sends only one probe per host and is therefore fast. Port and service scans send many probes per host and would take very long for large networks.
 
-### Port-Defaults
+### Port Defaults
 
-| Tool | Default Ports | Konfigurierbar? |
-|------|---------------|-----------------|
-| ping_sweep | 22, 80, 443, 8080 | Nein (fest) |
-| port_scanner | Top 100 | Ja (`ports` Parameter) |
-| service_detect | Top 20 | Ja (`ports` Parameter) |
+| Tool | Default Ports | Configurable? |
+|------|---------------|---------------|
+| ping_sweep | 22, 80, 443, 8080 | No (fixed) |
+| port_scanner | Top 100 | Yes (`ports` parameter) |
+| service_detect | Top 20 | Yes (`ports` parameter) |
 
 ### IPv6 Support
 
-**Status:** Nicht unterstützt (nicht geplant)
+**Status:** Not supported (not planned)
 
-Alle Tools lehnen IPv6-Adressen ab (z.B. `::1`, `fe80::1`, `2001:db8::1`). Der Fokus liegt auf IPv4 Heimnetzwerken.
+All tools reject IPv6 addresses (e.g., `::1`, `fe80::1`, `2001:db8::1`). The focus is on IPv4 home networks.
 
 ### DNS Lookup Exception
 
-Das `dns_lookup` Tool ist das einzige Tool, das öffentliche Domains abfragen darf. Das ist bewusst so, weil DNS-Abfragen keine Scans sind - sie fragen nur DNS-Server ab.
+The `dns_lookup` tool is the only tool allowed to query public domains. This is intentional because DNS queries are not scans - they only query DNS servers.
 
 </details>
 
-## Aktualisieren
+## Updating
 
-Um auf die neueste Version zu aktualisieren:
+To update to the latest version:
 
 ```bash
-# 1. Neuesten Code holen
+# 1. Get latest code
 cd network-agent
 git pull
 
-# 2. Docker Image neu bauen (WICHTIG!)
+# 2. Rebuild Docker image (IMPORTANT!)
 docker build -t network-agent:latest .
 
-# 3. Agent starten
+# 3. Start agent
 docker run -it --rm --network host --env-file .env network-agent:latest
 ```
 
-**Wann neu bauen?**
-- Nach jedem `git pull` (Code-Änderungen)
-- Nach Änderungen an `requirements.txt`
-- Nach Änderungen am `Dockerfile`
+**When to rebuild?**
+- After every `git pull` (code changes)
+- After changes to `requirements.txt`
+- After changes to `Dockerfile`
 
-**Tipp:** Die Convenience Scripts (`start.sh`, `start.bat`) bauen das Image nur, wenn es noch nicht existiert. Nach Updates musst du `docker build` manuell ausführen oder das alte Image löschen:
+**Tip:** The convenience scripts (`start.sh`, `start.bat`) only build the image if it doesn't exist. After updates, you must run `docker build` manually or delete the old image:
 ```bash
 docker rmi network-agent:latest
 ./start.sh
@@ -477,139 +466,139 @@ docker rmi network-agent:latest
 
 ## Troubleshooting
 
-> **Für Entwickler:** Projektstruktur und wie du eigene Tools hinzufügst findest du [am Ende dieser Seite](#für-entwickler-projektstruktur--eigene-tools).
+> **For Developers:** Project structure and how to add custom tools can be found [at the end of this page](#for-developers-project-structure--custom-tools).
 
 <details>
 <summary><strong>"LLM_API_KEY environment variable not set"</strong></summary>
 
-Die `.env` Datei fehlt oder enthält keinen Key.
+The `.env` file is missing or doesn't contain a key.
 
-**Lösung:**
+**Solution:**
 ```bash
 cp .env.example .env
-# Dann .env bearbeiten und deinen API Key eintragen
+# Then edit .env and enter your API key
 ```
 </details>
 
 <details>
 <summary><strong>"Error: Scan timeout"</strong></summary>
 
-Der Scan dauert zu lange und bricht ab.
+The scan takes too long and aborts.
 
-**Mögliche Ursachen:**
-- Netzwerk zu groß (z.B. /16 statt /24)
-- Netzwerk nicht erreichbar
-- Firewall blockiert Pakete
+**Possible causes:**
+- Network too large (e.g., /16 instead of /24)
+- Network not reachable
+- Firewall blocking packets
 
-**Lösungen:**
-1. Kleineres Subnetz versuchen: `/28` (16 Hosts) statt `/24` (256 Hosts)
-2. Timeout in `config/settings.yaml` erhöhen: `timeout: 300`
-3. Prüfen ob du im richtigen Netzwerk bist
+**Solutions:**
+1. Try smaller subnet: `/28` (16 hosts) instead of `/24` (256 hosts)
+2. Increase timeout in `config/settings.yaml`: `timeout: 300`
+3. Check if you're in the correct network
 </details>
 
 <details>
-<summary><strong>Keine Geräte gefunden</strong></summary>
+<summary><strong>No devices found</strong></summary>
 
-Der Scan läuft durch, findet aber nichts.
+The scan completes but finds nothing.
 
-**Auf Windows/macOS:**
-TCP-Connect Scan findet nur Geräte mit offenen Standard-Ports (22, 80, 443...).
-→ Für vollständige Erkennung: WSL2 auf Windows nutzen
+**On Windows/macOS:**
+TCP-Connect scan only finds devices with open standard ports (22, 80, 443...).
+→ For complete detection: Use WSL2 on Windows
 
-**Auf Linux:**
-- Bist du im richtigen Netzwerk? Prüfe mit `ip addr`
-- Ist `--network host` beim Docker-Start gesetzt?
-- Firewall auf dem Host-System prüfen
+**On Linux:**
+- Are you in the correct network? Check with `ip addr`
+- Is `--network host` set when starting Docker?
+- Check firewall on the host system
 </details>
 
 <details>
 <summary><strong>"Validation error: Public IP not allowed"</strong></summary>
 
-Du versuchst eine öffentliche IP oder ein Internet-Netzwerk zu scannen.
+You're trying to scan a public IP or internet network.
 
-**Warum?** Der Agent ist nur für lokale Netzwerke gedacht.
+**Why?** The agent is only intended for local networks.
 
-**Lösung:** Nutze private IP-Bereiche:
-- `192.168.x.x/24` (Heimnetzwerke)
-- `10.x.x.x/24` (Firmennetzwerke)
+**Solution:** Use private IP ranges:
+- `192.168.x.x/24` (home networks)
+- `10.x.x.x/24` (corporate networks)
 - `172.16-31.x.x/24` (Docker, VPNs)
 </details>
 
 <details>
-<summary><strong>Model nicht gefunden / API Error</strong></summary>
+<summary><strong>Model not found / API Error</strong></summary>
 
-Der LLM-Provider antwortet mit einem Fehler.
+The LLM provider responds with an error.
 
-**Prüfe in `config/settings.yaml`:**
-- Ist `model` korrekt geschrieben? (z.B. `gpt-4` nicht `GPT-4`)
-- Ist `base_url` für deinen Provider richtig?
-- Unterstützt dein Provider Tool/Function Calling?
+**Check in `config/settings.yaml`:**
+- Is `model` spelled correctly? (e.g., `gpt-4` not `GPT-4`)
+- Is `base_url` correct for your provider?
+- Does your provider support Tool/Function Calling?
 
-**Prüfe deinen API Key:**
-- Ist der Key in `.env` korrekt?
-- Hat der Key genug Guthaben/Credits?
-- Ist der Key für das gewählte Model berechtigt?
+**Check your API key:**
+- Is the key in `.env` correct?
+- Does the key have enough balance/credits?
+- Is the key authorized for the selected model?
 </details>
 
 <details>
-<summary><strong>Agent antwortet nicht sinnvoll</strong></summary>
+<summary><strong>Agent doesn't respond sensibly</strong></summary>
 
-Die KI versteht deine Frage nicht oder gibt seltsame Antworten.
+The AI doesn't understand your question or gives strange answers.
 
-**Tipps:**
-- Sei spezifischer: `Scanne 192.168.1.0/24` statt `Scanne mein Netzwerk`
-- Gib das Netzwerk immer mit an
-- Nutze `/clear` um die Session zurückzusetzen
-- Probiere ein anderes/größeres Model (z.B. gpt-4 statt gpt-3.5)
+**Tips:**
+- Be more specific: `Scan 192.168.1.0/24` instead of `Scan my network`
+- Always specify the network
+- Use `/clear` to reset the session
+- Try a different/larger model (e.g., gpt-4 instead of gpt-3.5)
 </details>
 
 ---
 
 <details>
-<summary><strong>Für Entwickler: Projektstruktur & eigene Tools</strong></summary>
+<summary><strong>For Developers: Project Structure & Custom Tools</strong></summary>
 
-### Dateien im Projekt
+### Files in the project
 
 ```
 network-agent/
-├── cli.py              # Hauptprogramm (REPL)
+├── cli.py              # Main program (REPL)
 ├── agent/
-│   ├── core.py         # KI-Agent mit Tool-Loop + Session Memory
-│   └── llm.py          # LLM Client (OpenAI-kompatibel)
+│   ├── core.py         # AI agent with tool loop + session memory
+│   └── llm.py          # LLM client (OpenAI-compatible)
 ├── tools/
-│   ├── base.py         # Tool-Basisklasse
-│   ├── config.py       # Scan-Konfiguration (Singleton)
-│   ├── validation.py   # Input-Validierung
-│   ├── network/        # Netzwerk-Tools
+│   ├── base.py         # Tool base class
+│   ├── config.py       # Scan configuration (singleton)
+│   ├── validation.py   # Input validation
+│   ├── network/        # Network tools
 │   │   ├── ping_sweep.py
 │   │   ├── dns_lookup.py
 │   │   ├── port_scanner.py
 │   │   └── service_detect.py
-│   └── web/            # Web-Tools
-│       └── web_search.py   # SearXNG Web-Suche
+│   └── web/            # Web tools
+│       └── web_search.py   # SearXNG web search
 ├── config/
-│   ├── settings.yaml   # Provider & Scan Konfiguration
+│   ├── settings.yaml   # Provider & scan configuration
 │   └── prompts/
-│       └── system.md   # System-Prompt für KI
-├── searxng/            # SearXNG Konfiguration
-│   └── settings.yml    # Suchmaschinen-Konfiguration
-├── docker-compose.yml  # Linux (mit Host-Network)
-├── docker-compose.macos.yml  # macOS/Windows (mit Bridge-Network)
-├── Dockerfile          # Container-Definition
-├── requirements.txt    # Python-Abhängigkeiten
-└── .env.example        # API-Key Vorlage
+│       └── system.md   # System prompt for AI
+├── searxng/            # SearXNG configuration
+│   └── settings.yml    # Search engine configuration
+├── docker-compose.yml  # Linux (with host network)
+├── docker-compose.macos.yml  # macOS/Windows (with bridge network)
+├── Dockerfile          # Container definition
+├── requirements.txt    # Python dependencies
+└── .env.example        # API key template
 ```
 
-### Eigene Tools hinzufügen
+### Adding custom tools
 
-1. Neue Datei unter `tools/` erstellen
-2. Von `BaseTool` erben und `name`, `description`, `parameters`, `execute` implementieren
-3. In `tools/__init__.py` registrieren
+1. Create new file under `tools/`
+2. Inherit from `BaseTool` and implement `name`, `description`, `parameters`, `execute`
+3. Register in `tools/__init__.py`
 
-Beispiel siehe `tools/network/ping_sweep.py`.
+See `tools/network/ping_sweep.py` for an example.
 
 </details>
 
-## Lizenz
+## License
 
 MIT
