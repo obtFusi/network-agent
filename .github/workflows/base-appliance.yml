@@ -106,19 +106,43 @@ jobs:
               curl -fsSL https://ollama.com/install.sh | sudo sh
             fi
 
+            # Wait for Ollama service to be ready
+            echo "⏳ Waiting for Ollama service..."
+            for i in {1..30}; do
+              if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
+                echo "✅ Ollama service is ready"
+                break
+              fi
+              echo "Waiting... ($i/30)"
+              sleep 2
+            done
+
             # Pull models (only needed once, then cached)
             export OLLAMA_MODELS="$MODELS_DIR"
+            mkdir -p "$MODELS_DIR"
             ollama pull "$OLLAMA_MODEL"
             ollama pull "qwen3:4b-instruct-2507-q4_K_M"
 
+            # Copy models from default location to cache dir
+            if [[ -d "/usr/share/ollama/.ollama/models" ]]; then
+              cp -r /usr/share/ollama/.ollama/models/* "$MODELS_DIR/" || true
+            fi
+
             echo "✅ Models cached at $MODELS_DIR"
-            ls -lh "$MODELS_DIR"
+            ls -lh "$MODELS_DIR" || echo "Models dir empty, checking default location"
+            ls -lh /usr/share/ollama/.ollama/models/ 2>/dev/null || true
           fi
 
-          # Create tarball for fast transfer to VM
+          # Create tarball for fast transfer to VM (use actual models location)
           echo "📦 Creating model archive for VM transfer..."
-          cd "$CACHE_DIR"
-          tar -cf /tmp/ollama-models.tar models/
+          if [[ -d "$MODELS_DIR" && -n "$(ls -A $MODELS_DIR 2>/dev/null)" ]]; then
+            cd "$CACHE_DIR"
+            tar -cf /tmp/ollama-models.tar models/
+          else
+            # Fallback: use default ollama location
+            cd /usr/share/ollama/.ollama
+            tar -cf /tmp/ollama-models.tar models/
+          fi
           ls -lh /tmp/ollama-models.tar
 
       - name: Initialize Packer
