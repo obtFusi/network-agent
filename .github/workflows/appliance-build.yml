@@ -7,6 +7,10 @@ on:
         description: 'Version (e.g., 0.4.0)'
         required: true
         type: string
+      base_version:
+        description: 'Base image version (e.g., 2026-01, or "latest")'
+        type: string
+        default: 'latest'
       skip_test:
         description: 'Skip E2E test (for debugging)'
         type: boolean
@@ -50,9 +54,13 @@ jobs:
         working-directory: infrastructure/packer
         run: packer init .
 
-      - name: Validate Packer template
+      - name: Validate Packer templates
         working-directory: infrastructure/packer
-        run: packer validate network-agent.pkr.hcl
+        run: |
+          # Validate layer template (used for release builds)
+          packer validate -var "version=0.0.0" -var "base_image=dummy.qcow2" layer.pkr.hcl
+          # Validate base template (used for monthly builds)
+          packer validate -var "base_version=2026-01" base.pkr.hcl
 
       - name: Validate docker-compose files
         run: |
@@ -144,18 +152,53 @@ jobs:
         run: packer init .
 
       # ═══════════════════════════════════════════════════════════
-      # BUILD PHASE
+      # BUILD PHASE (Layered: download base → build layer)
       # ═══════════════════════════════════════════════════════════
 
-      - name: Build qcow2 Image
+      - name: Download base image from MinIO
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          BASE_VERSION: ${{ inputs.base_version || 'latest' }}
+        run: |
+          # Install mc client
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
+          chmod +x /tmp/mc
+
+          # Configure alias
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+
+          # Create input directory
+          mkdir -p infrastructure/packer/input
+
+          # Download base image
+          BASE_FILE="base-${BASE_VERSION}.qcow2.zst"
+          echo "Downloading base image: $BASE_FILE"
+          /tmp/mc cp minio/appliance-base/${BASE_FILE} infrastructure/packer/input/
+
+          # Decompress base image
+          echo "Decompressing base image..."
+          cd infrastructure/packer/input
+          zstd -d -v ${BASE_FILE}
+          rm -f ${BASE_FILE}
+
+          # Rename to expected name
+          mv base-*.qcow2 base.qcow2
+          ls -lh base.qcow2
+          echo "BASE_IMAGE=input/base.qcow2" >> $GITHUB_ENV
+
+      - name: Build layer qcow2 Image
         working-directory: infrastructure/packer
         run: |
           VERSION_CLEAN="${VERSION#v}"
-          echo "Building version: $VERSION_CLEAN"
+          echo "Building layer for version: $VERSION_CLEAN"
+          echo "Using base image: $BASE_IMAGE"
           packer build \
             -var "version=${VERSION_CLEAN}" \
+            -var "base_image=${BASE_IMAGE}" \
             -on-error=abort \
-            network-agent.pkr.hcl
+            layer.pkr.hcl
 
       - name: Verify build output
         run: |
@@ -241,6 +284,7 @@ jobs:
         run: |
           # Clean up after successful upload to free disk space
           rm -rf infrastructure/packer/output/ || true
+          rm -rf infrastructure/packer/input/ || true
           sudo fstrim -av || true
           echo "Build artifacts uploaded to MinIO and cleaned up"
 

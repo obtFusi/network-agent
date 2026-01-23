@@ -1,0 +1,182 @@
+name: Base Appliance Build
+
+# Monthly base image build (Debian + Docker + Ollama)
+# Uploaded to MinIO appliance-base bucket for layered builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: 'Base version (e.g., 2026-01)'
+        required: true
+        type: string
+      ollama_model:
+        description: 'Primary Ollama model'
+        type: string
+        default: 'qwen3:30b-a3b'
+  schedule:
+    # Run monthly on the 1st at 03:00 UTC
+    - cron: '0 3 1 * *'
+
+concurrency:
+  group: base-appliance-build
+  cancel-in-progress: false
+
+env:
+  PACKER_VERSION: "1.11.0"
+
+permissions:
+  contents: read
+
+jobs:
+  build-base:
+    name: Build Base Image
+    runs-on: self-hosted
+    timeout-minutes: 90
+    outputs:
+      base_version: ${{ steps.version.outputs.BASE_VERSION }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudflare.docker.com:443
+            cdimage.debian.org:443
+            deb.debian.org:443
+            security.debian.org:443
+            registry.ollama.ai:443
+            download.docker.com:443
+            dl.min.io:443
+
+      - uses: actions/checkout@v4
+
+      - name: Set version
+        id: version
+        run: |
+          if [[ -n "${{ inputs.base_version }}" ]]; then
+            BASE_VERSION="${{ inputs.base_version }}"
+          else
+            # Auto-generate from current month
+            BASE_VERSION=$(date +%Y-%m)
+          fi
+          echo "BASE_VERSION=$BASE_VERSION" >> $GITHUB_OUTPUT
+          echo "Building base image: $BASE_VERSION"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zstd qemu-utils
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Verify KVM support
+        run: |
+          if [[ ! -e /dev/kvm ]]; then
+            echo "ERROR: KVM not available. Self-hosted runner requires hardware virtualization."
+            exit 1
+          fi
+          ls -la /dev/kvm
+
+      - name: Initialize Packer
+        working-directory: infrastructure/packer
+        run: packer init .
+
+      - name: Validate base template
+        working-directory: infrastructure/packer
+        run: |
+          packer validate \
+            -var "base_version=${{ steps.version.outputs.BASE_VERSION }}" \
+            base.pkr.hcl
+
+      - name: Build base qcow2 image
+        working-directory: infrastructure/packer
+        env:
+          OLLAMA_MODEL: ${{ inputs.ollama_model || 'qwen3:30b-a3b' }}
+        run: |
+          echo "Building base image version: ${{ steps.version.outputs.BASE_VERSION }}"
+          echo "Ollama model: $OLLAMA_MODEL"
+          packer build \
+            -var "base_version=${{ steps.version.outputs.BASE_VERSION }}" \
+            -var "ollama_model=$OLLAMA_MODEL" \
+            -on-error=abort \
+            base.pkr.hcl
+
+      - name: Verify build output
+        run: |
+          ls -lh infrastructure/packer/output-base/
+          QCOW2_FILE=$(ls infrastructure/packer/output-base/*.qcow2)
+          echo "Built image: $QCOW2_FILE"
+
+      - name: Compress with zstd
+        run: |
+          cd infrastructure/packer/output-base
+          BASE_VERSION="${{ steps.version.outputs.BASE_VERSION }}"
+
+          echo "Compressing with zstd..."
+          zstd -3 -T0 -v *.qcow2 -o "base-${BASE_VERSION}.qcow2.zst"
+
+          echo "Compressed size:"
+          ls -lh *.zst
+
+          echo "Removing original qcow2..."
+          rm -f *.qcow2
+
+      - name: Generate checksum
+        run: |
+          cd infrastructure/packer/output-base
+          sha256sum *.zst > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload to MinIO (appliance-base bucket)
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        run: |
+          BASE_VERSION="${{ steps.version.outputs.BASE_VERSION }}"
+
+          # Install mc client
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
+          chmod +x /tmp/mc
+
+          # Configure alias
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+
+          # Upload to persistent base bucket
+          /tmp/mc cp infrastructure/packer/output-base/base-${BASE_VERSION}.qcow2.zst minio/appliance-base/
+          /tmp/mc cp infrastructure/packer/output-base/SHA256SUMS minio/appliance-base/SHA256SUMS-${BASE_VERSION}
+
+          # Also upload as "latest" for convenience
+          /tmp/mc cp infrastructure/packer/output-base/base-${BASE_VERSION}.qcow2.zst minio/appliance-base/base-latest.qcow2.zst
+
+          # Verify upload
+          echo "Uploaded to MinIO appliance-base:"
+          /tmp/mc ls minio/appliance-base/
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf infrastructure/packer/output-base/ || true
+          sudo fstrim -av || true
+          echo "Base image build complete and uploaded to MinIO"
+
+      - name: Summary
+        run: |
+          BASE_VERSION="${{ steps.version.outputs.BASE_VERSION }}"
+          echo "## Base Appliance Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** $BASE_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Location:** MinIO appliance-base bucket" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files:**" >> $GITHUB_STEP_SUMMARY
+          echo "  - \`base-${BASE_VERSION}.qcow2.zst\`" >> $GITHUB_STEP_SUMMARY
+          echo "  - \`base-latest.qcow2.zst\` (symlink)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Use this base image for layered appliance builds." >> $GITHUB_STEP_SUMMARY
