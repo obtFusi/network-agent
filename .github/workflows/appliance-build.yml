@@ -513,11 +513,9 @@ jobs:
             ssh root@$PVE_HOST "rm -rf /root/build-tmp/network-agent*.qcow2* 2>/dev/null || true"
           fi
 
-          # Clean up downloaded artifacts (they're still in MinIO for 7 days)
+          # Clean up downloaded artifacts (MinIO cleanup handled by dedicated step)
           rm -rf infrastructure/packer/output/ || true
-
-          echo "::notice::Build artifacts are preserved in MinIO for 7 days"
-          echo "To re-run E2E test: gh run rerun <run-id> --job e2e-test"
+          echo "::notice::E2E failed. Re-run requires full rebuild (no artifact retention)."
 
           # Reclaim thin-provisioned space
           sudo fstrim -av || true
@@ -541,14 +539,15 @@ jobs:
             --clobber
           echo "✓ Uploaded to GitHub Release"
 
-      - name: Cleanup MinIO artifacts (after release upload)
-        if: success() && github.event_name == 'release'
+      - name: Cleanup MinIO artifacts
+        if: always()
         env:
           MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
           MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
           MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
         run: |
-          # Remove from MinIO after successful release upload
-          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
-          /tmp/mc rm --recursive --force minio/appliance-builds/${VERSION}/
+          # Always clean up MinIO (no retention for daily builds)
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc 2>/dev/null && chmod +x /tmp/mc
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY 2>/dev/null || true
+          /tmp/mc rm --recursive --force minio/appliance-builds/${VERSION}/ 2>/dev/null || true
           echo "✓ Cleaned up MinIO artifacts"
