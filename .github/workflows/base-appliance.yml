@@ -32,7 +32,7 @@ jobs:
   build-base:
     name: Build Base Image
     runs-on: self-hosted
-    timeout-minutes: 150  # Base image with Ollama model (~19GB) needs ~2h
+    timeout-minutes: 60  # With cached models: ~30-40min instead of 90min
     outputs:
       base_version: ${{ steps.version.outputs.BASE_VERSION }}
     steps:
@@ -84,6 +84,42 @@ jobs:
             exit 1
           fi
           ls -la /dev/kvm
+
+      - name: Cache Ollama models on runner
+        env:
+          OLLAMA_MODEL: ${{ inputs.ollama_model || 'qwen3:30b-a3b' }}
+        run: |
+          CACHE_DIR="/opt/ollama-cache"
+          MODELS_DIR="$CACHE_DIR/models"
+
+          # Check if cache exists and is recent (< 7 days old)
+          if [[ -d "$MODELS_DIR" ]] && find "$MODELS_DIR" -maxdepth 1 -mtime -7 | grep -q .; then
+            echo "✅ Ollama models cached and recent"
+            ls -lh "$MODELS_DIR"
+          else
+            echo "📥 Downloading Ollama models to runner cache..."
+            sudo mkdir -p "$CACHE_DIR"
+            sudo chown runner:runner "$CACHE_DIR"
+
+            # Install Ollama on runner if not present
+            if ! command -v ollama &> /dev/null; then
+              curl -fsSL https://ollama.com/install.sh | sudo sh
+            fi
+
+            # Pull models (only needed once, then cached)
+            export OLLAMA_MODELS="$MODELS_DIR"
+            ollama pull "$OLLAMA_MODEL"
+            ollama pull "qwen3:4b-instruct-2507-q4_K_M"
+
+            echo "✅ Models cached at $MODELS_DIR"
+            ls -lh "$MODELS_DIR"
+          fi
+
+          # Create tarball for fast transfer to VM
+          echo "📦 Creating model archive for VM transfer..."
+          cd "$CACHE_DIR"
+          tar -cf /tmp/ollama-models.tar models/
+          ls -lh /tmp/ollama-models.tar
 
       - name: Initialize Packer
         working-directory: infrastructure/packer
