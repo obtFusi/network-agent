@@ -414,7 +414,8 @@ MANUELLER BUILD (Debugging, Test ohne Release)
 | SSH Key | `/home/runner/.ssh/id_ed25519` auf Runner → Proxmox |
 | Status | `ssh root@github-runner systemctl status github-runner` |
 | Logs | `ssh root@github-runner journalctl -u github-runner -f` |
-| Disk | 80GB, nach Build ~40GB frei (zstd + E2E Test) |
+| Disk | 120GB, nach Build ~60GB frei (zstd + E2E Test) |
+| RAM | 32GB (für Ollama Model Download) |
 | Cleanup | `ssh root@github-runner fstrim -v /` (nach Build) |
 
 **E2E Test Architektur:**
@@ -429,10 +430,13 @@ GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
                      └─ Docker Compose Status
 ```
 
-**Appliance Build Phasen (~50 min gesamt):**
-1. Validate Templates (ubuntu-latest, ~20s)
-2. Build qcow2 + E2E Test (self-hosted, ~45 min)
-3. Upload to Release (ubuntu-latest, ~5 min)
+**Appliance Build Phasen (4 separate Jobs):**
+1. `validate` - Templates prüfen (ubuntu-latest, ~20s)
+2. `build` - qcow2 bauen + komprimieren (self-hosted, ~40 min)
+3. `e2e-test` - Test-VM + Health Checks (self-hosted, ~10 min)
+4. `upload-release` - Zu Release hochladen (ubuntu-latest, ~5 min)
+
+**Vorteil:** E2E-Fehler → nur Job 3 re-run (~10 min statt ~50 min)
 
 ---
 
