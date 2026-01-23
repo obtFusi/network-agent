@@ -87,7 +87,7 @@ jobs:
 
       - name: Initialize Packer
         working-directory: infrastructure/packer
-        run: packer init .
+        run: packer init base.pkr.hcl
 
       - name: Validate base template
         working-directory: infrastructure/packer
