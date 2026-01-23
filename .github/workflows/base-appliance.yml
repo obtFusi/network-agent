@@ -133,14 +133,20 @@ jobs:
             ls -lh "$MODELS_DIR"
           fi
 
-          # Create tarball for fast transfer to VM (use persistent storage, not tmpfs)
-          echo "📦 Creating model archive for VM transfer..."
-          ARCHIVE_PATH="/opt/ollama-cache/ollama-models.tar"
-          cd "$CACHE_DIR"
-          tar -cf "$ARCHIVE_PATH" models/
+          # Create compressed tarball for fast transfer to VM (only if not exists)
+          ARCHIVE_PATH="/opt/ollama-cache/ollama-models.tar.zst"
+          if [[ -f "$ARCHIVE_PATH" && $(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo 0) -gt 1000000000 ]]; then
+            echo "✅ Tarball already cached ($(ls -lh "$ARCHIVE_PATH" | awk '{print $5}'))"
+          else
+            echo "📦 Creating compressed model archive..."
+            cd "$CACHE_DIR"
+            # Use zstd compression: 40GB → ~15GB, fast compression
+            tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
+            echo "✅ Archive created: $(ls -lh "$ARCHIVE_PATH" | awk '{print $5}')"
+          fi
           ls -lh "$ARCHIVE_PATH"
           # Symlink for packer to find it
-          ln -sf "$ARCHIVE_PATH" /tmp/ollama-models.tar
+          ln -sf "$ARCHIVE_PATH" /tmp/ollama-models.tar.zst
 
       - name: Initialize Packer
         working-directory: infrastructure/packer
