@@ -63,7 +63,7 @@ jobs:
                         -f infrastructure/docker/docker-compose.online.yml config --quiet
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # BUILD JOB: Creates qcow2 image, compresses, splits, uploads as artifact
+  # BUILD JOB: Creates qcow2 image, compresses, splits, uploads to MinIO
   # ═══════════════════════════════════════════════════════════════════════════
   build:
     name: Build Appliance
@@ -92,6 +92,7 @@ jobs:
             security.debian.org:443
             registry.ollama.ai:443
             download.docker.com:443
+            dl.min.io:443
 
       - uses: actions/checkout@v4
 
@@ -213,19 +214,27 @@ jobs:
           sed -i "s/VERSION:-0.4.0/VERSION:-${VERSION_CLEAN}/" infrastructure/packer/output/install-network-agent.sh
 
       # ═══════════════════════════════════════════════════════════
-      # UPLOAD BUILD ARTIFACTS (for E2E test job)
+      # UPLOAD TO MINIO (fast LAN transfer for E2E test job)
       # ═══════════════════════════════════════════════════════════
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: appliance-${{ steps.version.outputs.VERSION }}
-          path: |
-            infrastructure/packer/output/*.part-*
-            infrastructure/packer/output/SHA256SUMS
-            infrastructure/packer/output/install-network-agent.sh
-          retention-days: 7
-          compression-level: 0  # Already compressed with zstd
+      - name: Upload to MinIO
+        env:
+          MC_HOST_local: "${{ secrets.MINIO_ENDPOINT }}|${{ secrets.MINIO_ACCESS_KEY }}|${{ secrets.MINIO_SECRET_KEY }}"
+        run: |
+          # Install mc client
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
+          chmod +x /tmp/mc
+
+          # Configure alias (format: ALIAS/ACCESS_KEY/SECRET_KEY)
+          /tmp/mc alias set minio ${{ secrets.MINIO_ENDPOINT }} ${{ secrets.MINIO_ACCESS_KEY }} ${{ secrets.MINIO_SECRET_KEY }}
+
+          # Upload all artifacts
+          VERSION_CLEAN="${VERSION#v}"
+          /tmp/mc cp --recursive infrastructure/packer/output/ minio/appliance-builds/${VERSION_CLEAN}/
+
+          # Verify upload
+          echo "Uploaded to MinIO:"
+          /tmp/mc ls minio/appliance-builds/${VERSION_CLEAN}/
 
       - name: Cleanup build directory
         if: always()
@@ -233,11 +242,12 @@ jobs:
           # Clean up after successful upload to free disk space
           rm -rf infrastructure/packer/output/ || true
           sudo fstrim -av || true
-          echo "Build artifacts uploaded and cleaned up"
+          echo "Build artifacts uploaded to MinIO and cleaned up"
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # E2E TEST JOB: Downloads artifact, creates test VM, runs health checks
+  # E2E TEST JOB: Downloads from MinIO, creates test VM, runs health checks
   # Can be re-run independently without rebuilding (saves ~40 min)
+  # On release: Also uploads to GitHub Release after successful test
   # ═══════════════════════════════════════════════════════════════════════════
   e2e-test:
     name: E2E Test
@@ -256,6 +266,7 @@ jobs:
           allowed-endpoints: >
             github.com:443
             api.github.com:443
+            dl.min.io:443
 
       - uses: actions/checkout@v4
 
@@ -282,14 +293,23 @@ jobs:
           fi
           echo "✓ Proxmox connectivity validated"
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: infrastructure/packer/output
-
-      - name: Verify downloaded artifacts
+      - name: Download from MinIO
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
         run: |
+          # Install mc client
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
+          chmod +x /tmp/mc
+
+          # Configure alias
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+
+          # Download all artifacts
+          mkdir -p infrastructure/packer/output
+          /tmp/mc cp --recursive minio/appliance-builds/${VERSION}/ infrastructure/packer/output/
+
           echo "Downloaded artifacts:"
           ls -lh infrastructure/packer/output/
           echo ""
@@ -493,47 +513,42 @@ jobs:
             ssh root@$PVE_HOST "rm -rf /root/build-tmp/network-agent*.qcow2* 2>/dev/null || true"
           fi
 
-          # Clean up downloaded artifacts (they're still in GitHub Artifacts)
+          # Clean up downloaded artifacts (they're still in MinIO for 7 days)
           rm -rf infrastructure/packer/output/ || true
 
-          echo "::notice::Build artifacts are preserved in GitHub Artifacts for 7 days"
+          echo "::notice::Build artifacts are preserved in MinIO for 7 days"
           echo "To re-run E2E test: gh run rerun <run-id> --job e2e-test"
 
           # Reclaim thin-provisioned space
           sudo fstrim -av || true
           echo "VM cleanup completed"
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # UPLOAD JOB: Uploads artifacts to GitHub Release (only for releases)
-  # ═══════════════════════════════════════════════════════════════════════════
-  upload-release:
-    name: Upload to Release
-    runs-on: ubuntu-latest
-    needs: [build, e2e-test]
-    if: github.event_name == 'release'
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@v2
-        with:
-          egress-policy: audit
+      # ═══════════════════════════════════════════════════════════
+      # UPLOAD TO GITHUB RELEASE (only for releases, after successful E2E)
+      # ═══════════════════════════════════════════════════════════
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.build.outputs.artifact-name }}
-          path: artifacts
-
-      - name: Verify artifacts
+      - name: Upload to GitHub Release
+        if: success() && github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Artifacts to upload:"
-          ls -lh artifacts/
-          cd artifacts && sha256sum -c SHA256SUMS
+          echo "Uploading to release ${{ github.event.release.tag_name }}..."
+          cd infrastructure/packer/output
+          gh release upload "${{ github.event.release.tag_name }}" \
+            *.part-* \
+            SHA256SUMS \
+            install-network-agent.sh \
+            --clobber
+          echo "✓ Uploaded to GitHub Release"
 
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/*.part-*
-            artifacts/SHA256SUMS
-            artifacts/install-network-agent.sh
-          fail_on_unmatched_files: true
+      - name: Cleanup MinIO artifacts (after release upload)
+        if: success() && github.event_name == 'release'
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        run: |
+          # Remove from MinIO after successful release upload
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+          /tmp/mc rm --recursive --force minio/appliance-builds/${VERSION}/
+          echo "✓ Cleaned up MinIO artifacts"
