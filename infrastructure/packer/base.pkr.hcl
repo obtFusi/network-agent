@@ -195,8 +195,8 @@ build {
 
   # Step 7a: Copy cached Ollama models from host (FAST: ~2min instead of 25min)
   provisioner "file" {
-    source      = "/tmp/ollama-models.tar"
-    destination = "/tmp/ollama-models.tar"
+    source      = "/tmp/ollama-models.tar.zst"
+    destination = "/tmp/ollama-models.tar.zst"
   }
 
   # Step 7b: Extract and setup Ollama models
@@ -204,8 +204,9 @@ build {
     inline = [
       "echo '=== Extracting cached Ollama models ==='",
       "mkdir -p /tmp/ollama-cache",
+      "zstd -d /tmp/ollama-models.tar.zst -o /tmp/ollama-models.tar",
       "tar -xf /tmp/ollama-models.tar -C /tmp/ollama-cache",
-      "rm /tmp/ollama-models.tar",
+      "rm /tmp/ollama-models.tar /tmp/ollama-models.tar.zst",
       "ls -lh /tmp/ollama-cache/"
     ]
   }
