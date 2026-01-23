@@ -92,9 +92,10 @@ jobs:
           CACHE_DIR="/opt/ollama-cache"
           MODELS_DIR="$CACHE_DIR/models"
 
-          # Check if cache exists and is recent (< 7 days old)
-          if [[ -d "$MODELS_DIR" ]] && find "$MODELS_DIR" -maxdepth 1 -mtime -7 | grep -q .; then
-            echo "✅ Ollama models cached and recent"
+          # Check if cache exists with actual model files (blobs > 1GB)
+          CACHE_SIZE=$(du -s "$MODELS_DIR" 2>/dev/null | awk '{print $1}' || echo "0")
+          if [[ "$CACHE_SIZE" -gt 1000000 ]]; then  # > 1GB means real models
+            echo "✅ Ollama models cached ($CACHE_SIZE KB)"
             ls -lh "$MODELS_DIR"
           else
             echo "📥 Downloading Ollama models to runner cache..."
