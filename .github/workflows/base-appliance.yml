@@ -137,6 +137,7 @@ jobs:
             # DELETE models to save disk space (tarball is the cache)
             echo "🧹 Cleaning up models dir to save space..."
             rm -rf "$TEMP_MODELS"
+            sudo rm -rf /usr/share/ollama  # Ollama default location (40GB!)
             df -h /
           fi
 
