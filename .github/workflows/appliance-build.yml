@@ -149,7 +149,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip zstd qemu-utils
+          sudo apt-get install -y unzip zstd qemu-utils bc jq
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@v3
