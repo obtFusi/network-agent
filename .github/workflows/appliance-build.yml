@@ -279,17 +279,33 @@ jobs:
           VERSION_CLEAN="${VERSION#v}"
           echo "Building complete appliance version: $VERSION_CLEAN"
 
+          # Start a robust HTTP server for large model file (Packer's is unreliable for 20GB)
+          # Python's http.server on port 8081, Packer uses 8080 for preseed
+          echo "Starting model server on port 8081..."
+          CACHE_DIR="/opt/ollama-cache"
+          cd "$CACHE_DIR" && python3 -m http.server 8081 --bind 0.0.0.0 &
+          MODEL_SERVER_PID=$!
+          cd "$GITHUB_WORKSPACE/infrastructure/packer"
+          sleep 2
+          curl -sf http://localhost:8081/ollama-models.tar.zst -o /dev/null --head && echo "Model server ready" || { echo "Model server failed!"; exit 1; }
+
           # Run packer and capture output for telemetry parsing
           packer build \
             -var "version=${VERSION_CLEAN}" \
             -on-error=abort \
             base.pkr.hcl 2>&1 | tee /tmp/packer-build.log
+          PACKER_EXIT=$?
+
+          # Stop model server
+          kill $MODEL_SERVER_PID 2>/dev/null || true
 
           telemetry_step_end "packer_build"
 
           # Extract Packer's internal telemetry from log
           echo "Extracting Packer step telemetry..."
           grep -E "⏱️|Duration:|CPU:|Memory:|Disk|Net " /tmp/packer-build.log > $TELEMETRY_DIR/packer_steps.txt || true
+
+          exit $PACKER_EXIT
 
       - name: Verify build output
         run: |
