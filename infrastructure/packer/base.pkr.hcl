@@ -121,6 +121,10 @@ source "qemu" "appliance" {
   headless = true
   display  = "none"
 
+  # Fixed HTTP port for model transfer (10.0.2.2 is QEMU user networking host)
+  http_port_min = 8080
+  http_port_max = 8080
+
   # VNC for debugging (set headless=false to use)
   vnc_bind_address = "127.0.0.1"
   vnc_port_min     = 5900
@@ -255,29 +259,15 @@ build {
     ]
   }
 
-  # Step 7a: Copy Ollama models via SCP (file provisioner)
-  # Using file provisioner instead of HTTP due to template variable issues
+  # Step 7a: Download Ollama models from Packer HTTP server
+  # QEMU user networking: host is 10.0.2.2, fixed port 8080
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
       "source /usr/local/bin/telemetry.sh",
       "telemetry_start 'Step7a_Transfer_Models'",
-      "echo '=== Preparing for model transfer via SCP ==='",
-      "mkdir -p /var/tmp",
-      "echo 'Ready for file transfer'"
-    ]
-  }
-
-  provisioner "file" {
-    source      = "http/ollama-models.tar.zst"
-    destination = "/var/tmp/ollama-models.tar.zst"
-  }
-
-  provisioner "shell" {
-    inline_shebang = "/bin/bash -e"
-    inline = [
-      "source /usr/local/bin/telemetry.sh",
-      "echo '=== Model transfer complete ==='",
+      "echo '=== Downloading Ollama models from build host ==='",
+      "wget --progress=dot:giga -O /var/tmp/ollama-models.tar.zst http://10.0.2.2:8080/ollama-models.tar.zst",
       "ls -lh /var/tmp/ollama-models.tar.zst",
       "telemetry_end 'Step7a_Transfer_Models'"
     ]
