@@ -263,7 +263,9 @@ build {
       "telemetry_start 'Step7a_Download_Models'",
       "echo '=== Downloading Ollama models via HTTP ==='",
       "cd /var/tmp",
-      "wget -q --show-progress http://{{ .HTTPIP }}:{{ .HTTPPort }}/ollama-models.tar.zst -O ollama-models.tar.zst",
+      "MODEL_URL='http://{{ .HTTPIP }}:{{ .HTTPPort }}/ollama-models.tar.zst'",
+      "echo \"Downloading from: $MODEL_URL\"",
+      "wget --progress=dot:giga \"$MODEL_URL\" -O ollama-models.tar.zst",
       "ls -lh ollama-models.tar.zst",
       "telemetry_end 'Step7a_Download_Models'"
     ]
