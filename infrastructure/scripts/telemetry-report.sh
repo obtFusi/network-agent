@@ -79,14 +79,14 @@ cmd_latest() {
         echo -e "${GREEN}Total Duration:${NC} $(jq -r '.job_duration_s // "N/A"' "$TMP")s"
         echo ""
         echo -e "${BLUE}Steps:${NC}"
-        echo "───────────────────────────────────────────────────────────────────────"
-        printf "%-30s %10s %8s %10s %10s %10s\n" "STEP" "DURATION" "CPU%" "DISK_W" "NET_RX" "MEM"
-        echo "───────────────────────────────────────────────────────────────────────"
-        jq -r '.steps[] | "\(.name)\t\(.duration_s)s\t\(.cpu_percent)%\t\(.disk_write_mb)MB\t\(.net_rx_mb)MB\t\(.memory_used_mb)MB"' "$TMP" | \
-        while IFS=$'\t' read -r name dur cpu disk net mem; do
-            printf "%-30s %10s %8s %10s %10s %10s\n" "$name" "$dur" "$cpu" "$disk" "$net" "$mem"
+        echo "────────────────────────────────────────────────────────────────────────────────────────────"
+        printf "%-25s %8s %6s %8s %6s %7s %6s %8s\n" "STEP" "DUR" "CPU%" "DISK_W" "UTIL%" "AWAIT" "QUEUE" "NET_RX"
+        echo "────────────────────────────────────────────────────────────────────────────────────────────"
+        jq -r '.steps[] | "\(.name)\t\(.duration_s)s\t\(.cpu_percent)%\t\(.disk_write_mb)MB\t\(.disk_util_percent // 0)%\t\(.await_ms // 0)ms\t\(.queue_depth // 0)\t\(.net_rx_mb)MB"' "$TMP" | \
+        while IFS=$'\t' read -r name dur cpu disk util await queue net; do
+            printf "%-25s %8s %6s %8s %6s %7s %6s %8s\n" "$name" "$dur" "$cpu" "$disk" "$util" "$await" "$queue" "$net"
         done
-        echo "───────────────────────────────────────────────────────────────────────"
+        echo "────────────────────────────────────────────────────────────────────────────────────────────"
 
         # Identify bottlenecks
         echo ""
@@ -103,6 +103,18 @@ cmd_latest() {
         # Find most disk-intensive step
         DISK=$(jq -r '.steps | max_by(.disk_write_mb) | "\(.name): \(.disk_write_mb)MB written"' "$TMP")
         echo "  Most disk I/O: $DISK"
+
+        # Find highest disk utilization
+        DISK_UTIL=$(jq -r '.steps | max_by(.disk_util_percent // 0) | "\(.name): \(.disk_util_percent // 0)% util"' "$TMP")
+        echo "  Highest disk util: $DISK_UTIL"
+
+        # Find highest await time
+        AWAIT=$(jq -r '.steps | max_by(.await_ms // 0) | "\(.name): \(.await_ms // 0)ms await"' "$TMP")
+        echo "  Highest I/O wait: $AWAIT"
+
+        # Find highest queue depth
+        QUEUE=$(jq -r '.steps | max_by(.queue_depth // 0) | "\(.name): \(.queue_depth // 0) queue"' "$TMP")
+        echo "  Highest queue depth: $QUEUE"
 
         # Find highest memory usage
         MEMORY=$(jq -r '.steps | max_by(.memory_used_mb) | "\(.name): \(.memory_used_mb)MB"' "$TMP")
