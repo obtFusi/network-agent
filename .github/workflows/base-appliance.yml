@@ -90,15 +90,15 @@ jobs:
           OLLAMA_MODEL: ${{ inputs.ollama_model || 'qwen3:30b-a3b' }}
         run: |
           CACHE_DIR="/opt/ollama-cache"
-          MODELS_DIR="$CACHE_DIR/models"
+          ARCHIVE_PATH="$CACHE_DIR/ollama-models.tar.zst"
 
-          # Check if cache exists with actual model files (blobs > 1GB)
-          CACHE_SIZE=$(du -s "$MODELS_DIR" 2>/dev/null | awk '{print $1}' || echo "0")
-          if [[ "$CACHE_SIZE" -gt 1000000 ]]; then  # > 1GB means real models
-            echo "✅ Ollama models cached ($CACHE_SIZE KB)"
-            ls -lh "$MODELS_DIR"
+          # Check if tarball cache exists (>1GB = valid)
+          ARCHIVE_SIZE=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo 0)
+          if [[ "$ARCHIVE_SIZE" -gt 1000000000 ]]; then
+            echo "✅ Tarball cache exists ($(numfmt --to=iec $ARCHIVE_SIZE))"
+            ls -lh "$ARCHIVE_PATH"
           else
-            echo "📥 Downloading Ollama models to runner cache..."
+            echo "📥 No tarball cache, downloading models..."
             sudo mkdir -p "$CACHE_DIR"
             sudo chown runner:runner "$CACHE_DIR"
 
@@ -107,45 +107,40 @@ jobs:
               curl -fsSL https://ollama.com/install.sh | sudo sh
             fi
 
-            # Wait for Ollama service to be ready
+            # Wait for Ollama service
             echo "⏳ Waiting for Ollama service..."
             for i in {1..30}; do
               if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
-                echo "✅ Ollama service is ready"
+                echo "✅ Ollama ready"
                 break
               fi
-              echo "Waiting... ($i/30)"
               sleep 2
             done
 
-            # Pull models (only needed once, then cached)
-            export OLLAMA_MODELS="$MODELS_DIR"
-            mkdir -p "$MODELS_DIR"
+            # Pull models to temp location
+            TEMP_MODELS="$CACHE_DIR/models"
+            export OLLAMA_MODELS="$TEMP_MODELS"
+            mkdir -p "$TEMP_MODELS"
             ollama pull "$OLLAMA_MODEL"
             ollama pull "qwen3:4b-instruct-2507-q4_K_M"
 
-            # Copy models from default location to cache dir (needs sudo)
-            echo "Copying models to cache directory..."
+            # Copy from Ollama default location
             sudo cp -r /usr/share/ollama/.ollama/models "$CACHE_DIR/"
             sudo chown -R runner:runner "$CACHE_DIR"
 
-            echo "✅ Models cached at $MODELS_DIR"
-            ls -lh "$MODELS_DIR"
+            # Create tarball
+            echo "📦 Creating tarball..."
+            cd "$CACHE_DIR"
+            tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
+            echo "✅ Tarball: $(ls -lh "$ARCHIVE_PATH" | awk '{print $5}')"
+
+            # DELETE models to save disk space (tarball is the cache)
+            echo "🧹 Cleaning up models dir to save space..."
+            rm -rf "$TEMP_MODELS"
+            df -h /
           fi
 
-          # Create compressed tarball for fast transfer to VM (only if not exists)
-          ARCHIVE_PATH="/opt/ollama-cache/ollama-models.tar.zst"
-          if [[ -f "$ARCHIVE_PATH" && $(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo 0) -gt 1000000000 ]]; then
-            echo "✅ Tarball already cached ($(ls -lh "$ARCHIVE_PATH" | awk '{print $5}'))"
-          else
-            echo "📦 Creating compressed model archive..."
-            cd "$CACHE_DIR"
-            # Use zstd compression: 40GB → ~15GB, fast compression
-            tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
-            echo "✅ Archive created: $(ls -lh "$ARCHIVE_PATH" | awk '{print $5}')"
-          fi
-          ls -lh "$ARCHIVE_PATH"
-          # Symlink for packer to find it
+          # Symlink for packer
           ln -sf "$ARCHIVE_PATH" /tmp/ollama-models.tar.zst
 
       - name: Initialize Packer
