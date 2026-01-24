@@ -1,6 +1,6 @@
 # CI/CD - Network Agent
 
-**Letzte Aktualisierung:** 2026-01-23
+**Letzte Aktualisierung:** 2026-01-24
 **Status:** Production
 **SSOT für:** CI/CD-Pipeline, Workflow-Automation, Claude Code Integration
 
@@ -21,13 +21,14 @@
 
 1. [Pipeline-Übersicht](#1-pipeline-übersicht)
 2. [GitHub Actions Workflows](#2-github-actions-workflows)
-3. [Lokale CI mit act](#3-lokale-ci-mit-act)
-4. [Branch Protection](#4-branch-protection)
-5. [Claude Code Integration](#5-claude-code-integration)
-6. [Projekt-spezifische Skills](#6-projekt-spezifische-skills)
-7. [Globale Skills](#7-globale-skills)
-8. [Workflow-Diagramme](#8-workflow-diagramme)
-9. [Troubleshooting](#9-troubleshooting)
+3. [Build-Telemetrie](#3-build-telemetrie)
+4. [Lokale CI mit act](#4-lokale-ci-mit-act)
+5. [Branch Protection](#5-branch-protection)
+6. [Claude Code Integration](#6-claude-code-integration)
+7. [Projekt-spezifische Skills](#7-projekt-spezifische-skills)
+8. [Globale Skills](#8-globale-skills)
+9. [Workflow-Diagramme](#9-workflow-diagramme)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
@@ -385,7 +386,104 @@ ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc rm --recursive --force loc
 
 ---
 
-## 3. Lokale CI mit act
+## 3. Build-Telemetrie
+
+Das Telemetrie-System trackt detaillierte Metriken für jeden Build-Schritt zur Optimierung.
+
+### 3.1 Was wird gemessen?
+
+| Metrik | Beschreibung |
+|--------|--------------|
+| **Duration** | Zeit in Sekunden pro Step |
+| **CPU%** | Durchschnittliche CPU-Auslastung |
+| **Memory** | RAM-Verbrauch (absolut + Delta) |
+| **Disk Read/Write** | MB gelesen/geschrieben + IOPS |
+| **Network RX/TX** | MB empfangen/gesendet + Rate |
+
+### 3.2 Telemetrie-Komponenten
+
+| Komponente | Pfad | Zweck |
+|------------|------|-------|
+| GitHub Actions Telemetry | `infrastructure/scripts/telemetry.sh` | Workflow-Steps tracken |
+| Packer Telemetry | `infrastructure/packer/scripts/packer-telemetry.sh` | Provisioner-Steps tracken |
+| Report Tool | `infrastructure/scripts/telemetry-report.sh` | Historische Daten auswerten |
+
+### 3.3 Persistente Speicherung
+
+Telemetrie-Daten werden in MinIO gespeichert:
+
+```
+appliance-telemetry/
+├── latest/                     # Schnellzugriff auf aktuelle Builds
+│   ├── build_0.10.1.json
+│   └── e2e_0.10.1.json
+└── {version}/{timestamp}/      # Vollständige Historie
+    ├── build_telemetry.json
+    └── e2e_telemetry.json
+```
+
+### 3.4 Verwendung
+
+```bash
+# Aktuellste Build-Telemetrie anzeigen
+./infrastructure/scripts/telemetry-report.sh latest
+
+# Alle verfügbaren Telemetrie-Daten auflisten
+./infrastructure/scripts/telemetry-report.sh list
+
+# Zwei Versionen vergleichen
+./infrastructure/scripts/telemetry-report.sh compare 0.10.1 0.10.2
+
+# Letzte N Builds anzeigen
+./infrastructure/scripts/telemetry-report.sh history 5
+```
+
+### 3.5 Output-Beispiel
+
+```
+╔═══════════════════════════════════════════════════════════════════════╗
+║                    BUILD TELEMETRY SUMMARY                            ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║ Step1_Base_packages          45s  CPU: 32%  Net:  120MB  Disk:  200MB ║
+║ Step2_Docker_CE             180s  CPU: 28%  Net:  450MB  Disk:  800MB ║
+║ Step7a_Download_Models       60s  CPU:  5%  Net:15000MB  Disk:   10MB ║
+║ Step7c_Ollama_Install       300s  CPU: 85%  Net:   50MB  Disk:25000MB ║
+║ Step12_Docker_Pull          120s  CPU: 15%  Net: 2000MB  Disk: 3000MB ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║ TOTAL BUILD TIME:           900s                                      ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+Bottleneck Analysis:
+  Slowest step: Step7c_Ollama_Install: 300s
+  Most network I/O: Step7a_Download_Models: 15000MB downloaded
+  Most disk I/O: Step7c_Ollama_Install: 25000MB written
+  Peak memory: Step7c_Ollama_Install: 8192MB
+```
+
+### 3.6 Bottleneck-Erkennung
+
+Das System identifiziert automatisch:
+
+| Bottleneck | Indikator | Typische Ursache |
+|------------|-----------|------------------|
+| **CPU-Bound** | CPU > 80% | Kompilierung, Model-Loading |
+| **I/O-Bound** | Disk Write > 100 MB/s | Extraktion, Image-Build |
+| **Network-Bound** | Net RX > 50 MB/s | Model Download, Docker Pull |
+| **Memory Pressure** | Memory Delta > 4GB | Ollama Model Loading |
+
+### 3.7 Umgebungsvariablen
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `TELEMETRY_DIR` | `/tmp/telemetry` | Lokales Verzeichnis für JSON-Daten |
+| `TELEMETRY_BUCKET` | `appliance-telemetry` | MinIO Bucket Name |
+| `MINIO_ENDPOINT` | (Secret) | MinIO Server URL |
+| `MINIO_ACCESS_KEY` | (Secret) | MinIO Access Key |
+| `MINIO_SECRET_KEY` | (Secret) | MinIO Secret Key |
+
+---
+
+## 4. Lokale CI mit act
 
 ### Installation
 
@@ -435,7 +533,7 @@ act push -v
 
 ---
 
-## 4. Branch Protection
+## 5. Branch Protection
 
 ### Required Status Checks
 
@@ -471,7 +569,7 @@ gh pr merge <N> --admin  # NIEMALS!
 
 ---
 
-## 5. Claude Code Integration
+## 6. Claude Code Integration
 
 ### Warum Claude Code?
 
@@ -506,9 +604,9 @@ Die projektspezifische `.claude/CLAUDE.md` definiert:
 
 ---
 
-## 6. Projekt-spezifische Skills
+## 7. Projekt-spezifische Skills
 
-### 6.1 `/pr` - Pull Request Workflow
+### 7.1 `/pr` - Pull Request Workflow
 
 **Pfad:** `.claude/skills/pr/SKILL.md`
 **Trigger:** "erstelle PR", "create PR", "merge this"
@@ -544,7 +642,7 @@ Closes #N
 - **GitHub Actions rot:** STOP, lokal fixen, push
 - **Nie:** Skip steps, merge ohne grüne CI
 
-### 6.2 `/release` - Release Workflow
+### 7.2 `/release` - Release Workflow
 
 **Pfad:** `.claude/skills/release/SKILL.md`
 **Trigger:** "release", "neue version", "tag erstellen"
@@ -575,7 +673,7 @@ Closes #N
 - CHANGELOG.md MUSS Entry für neue Version haben
 - Entry MUSS Added, Changed, oder Fixed Section haben
 
-### 6.3 `/merge-deps` - Dependabot Merge
+### 7.3 `/merge-deps` - Dependabot Merge
 
 **Pfad:** `.claude/skills/merge-deps/SKILL.md`
 **Trigger:** "merge dependabot", "update deps"
@@ -610,11 +708,11 @@ Local main synced to abc1234
 
 ---
 
-## 7. Globale Skills
+## 8. Globale Skills
 
 Diese Skills sind global unter `~/.claude/commands/` definiert und in ALLEN Projekten verfügbar.
 
-### 7.1 `/impl-plan` - Implementierungsplan
+### 8.1 `/impl-plan` - Implementierungsplan
 
 **Pfad:** `~/.claude/commands/impl-plan.md`
 **Zweck:** Detaillierter Plan vor komplexen Implementierungen
@@ -648,7 +746,7 @@ Diese Skills sind global unter `~/.claude/commands/` definiert und in ALLEN Proj
 - **Gherkin-Specs:** Akzeptanzkriterien als Given/When/Then
 - **TodoWrite-Items:** Automatische Todo-Generierung
 
-### 7.2 `/claudemd` - CLAUDE.md Generator
+### 8.2 `/claudemd` - CLAUDE.md Generator
 
 **Pfad:** `~/.claude/commands/claudemd.md`
 **Zweck:** Optimale projektspezifische CLAUDE.md erstellen
@@ -691,7 +789,7 @@ Diese Skills sind global unter `~/.claude/commands/` definiert und in ALLEN Proj
 
 ---
 
-## 8. Workflow-Diagramme
+## 9. Workflow-Diagramme
 
 ### Feature-Entwicklung (End-to-End)
 
@@ -816,7 +914,7 @@ User: "Implementiere neues Feature X"
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### CI schlägt fehl
 

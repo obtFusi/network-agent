@@ -32,7 +32,11 @@
 | **Runner Status** | `ssh root@github-runner systemctl status github-runner` |
 | **Runner Logs** | `ssh root@github-runner journalctl -u github-runner -f` |
 | **MinIO Status** | `ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"` |
+| **MinIO Base Images** | `ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-base/"` |
 | **MinIO Build Artifacts** | `ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-builds/"` |
+| **Telemetry Report** | `./infrastructure/scripts/telemetry-report.sh latest` |
+| **Telemetry History** | `./infrastructure/scripts/telemetry-report.sh history 5` |
+| **Telemetry Compare** | `./infrastructure/scripts/telemetry-report.sh compare 0.10.1 0.10.2` |
 
 ---
 
@@ -449,8 +453,12 @@ GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
 | Container | `minio` (Proxmox LXC 160) |
 | IP | `10.0.0.165` |
 | Ports | 9000 (API), 9001 (Web Console) |
-| Bucket | `appliance-builds` (temp, auto-cleanup nach E2E) |
+| Buckets | `appliance-builds` (temp), `appliance-telemetry` (persistent) |
 | Status | `ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"` |
+
+**Bucket-Struktur:**
+- `appliance-builds/` - Build Artifacts (temp, auto-cleanup nach E2E)
+- `appliance-telemetry/` - Telemetrie-Daten (persistent für Vergleiche)
 
 **Warum MinIO?**
 - GitHub Artifact Upload: ~5 MB/s (Rate-Limited) → 27 GB = 75 min
