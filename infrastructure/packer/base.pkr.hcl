@@ -261,29 +261,38 @@ build {
 
   # Step 7a: Download Ollama models from Packer HTTP server
   # QEMU user networking: host is 10.0.2.2, fixed port 8080
+  # Note: 20GB file requires robust download with retries
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
       "source /usr/local/bin/telemetry.sh",
       "telemetry_start 'Step7a_Transfer_Models'",
+      "echo '=== Checking disk space ==='",
+      "df -h /var/tmp",
+      "AVAIL_GB=$(df --output=avail /var/tmp | tail -1 | awk '{print int($1/1024/1024)}')",
+      "echo \"Available: ${AVAIL_GB}GB (need ~60GB for download+extraction)\"",
+      "if [ \"$AVAIL_GB\" -lt 60 ]; then echo 'ERROR: Insufficient disk space!'; exit 1; fi",
       "echo '=== Downloading Ollama models from build host ==='",
-      "wget --progress=dot:giga -O /var/tmp/ollama-models.tar.zst http://10.0.2.2:8080/ollama-models.tar.zst",
+      "wget --tries=3 --timeout=300 --progress=dot:giga -O /var/tmp/ollama-models.tar.zst http://10.0.2.2:8080/ollama-models.tar.zst",
       "ls -lh /var/tmp/ollama-models.tar.zst",
+      "echo '=== Verifying download integrity ==='",
+      "zstd -t /var/tmp/ollama-models.tar.zst || { echo 'ERROR: Download corrupted or incomplete!'; exit 1; }",
+      "echo '✅ Download verified successfully'",
       "telemetry_end 'Step7a_Transfer_Models'"
     ]
   }
 
   # Step 7b: Extract Ollama models
+  # Uses piped decompression to avoid 40GB intermediate tar file
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
       "source /usr/local/bin/telemetry.sh",
       "telemetry_start 'Step7b_Extract_Models'",
-      "echo '=== Extracting Ollama models ==='",
+      "echo '=== Extracting Ollama models (streaming) ==='",
       "mkdir -p /tmp/ollama-cache",
-      "zstd -d /var/tmp/ollama-models.tar.zst -o /var/tmp/ollama-models.tar",
-      "tar -xf /var/tmp/ollama-models.tar -C /tmp/ollama-cache",
-      "rm /var/tmp/ollama-models.tar /var/tmp/ollama-models.tar.zst",
+      "zstd -dc /var/tmp/ollama-models.tar.zst | tar -xf - -C /tmp/ollama-cache",
+      "rm /var/tmp/ollama-models.tar.zst",
       "ls -lh /tmp/ollama-cache/",
       "telemetry_end 'Step7b_Extract_Models'"
     ]
