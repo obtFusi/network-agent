@@ -206,111 +206,76 @@ ignoreLabels: |
 
 **Wichtig:** NICHT als Required Check konfiguriert (Dependabot-Kompatibilität).
 
-### 2.6 Appliance Build Workflow (Layered Architecture)
+### 2.6 Appliance Build Workflow
 
 **Trigger:** `workflow_dispatch` (manuell) oder `release` (bei Tag)
-**Runner:** Self-hosted (Proxmox LXC) für Build- und E2E-Jobs
+**Runner:** Self-hosted (Proxmox LXC)
 **Artifact Storage:** MinIO (LAN) für schnellen Inter-Job Transfer
 
-#### Layered Build System
+#### One-Click Appliance Build
 
-Das Appliance-Build verwendet ein zweistufiges Layer-System:
+Das Appliance-Build erstellt ein **komplettes, sofort einsatzbereites VM-Image**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    LAYERED BUILD ARCHITECTURE                    │
+│                    ONE-CLICK APPLIANCE BUILD                     │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  BASE IMAGE (monatlich, ~40 min)     LAYER (pro Release, ~10 min)│
-│  ┌────────────────────────────┐     ┌────────────────────────┐  │
-│  │ • Debian 13 (Trixie)       │     │ • /opt/network-agent/  │  │
-│  │ • Docker CE                │     │ • docker-compose.yml   │  │
-│  │ • systemd-networkd         │ ──► │ • Docker Images Pull   │  │
-│  │ • SSH Hardening            │     │ • first-boot.sh        │  │
-│  │ • Kernel Tuning            │     │ • Firewall Rules       │  │
-│  │ • Ollama + Models (~20 GB) │     │ • VERSION file         │  │
-│  └────────────────────────────┘     └────────────────────────┘  │
-│           ↓                                   ↓                  │
-│  appliance-base/base-2026-01.qcow2.zst   network-agent-0.10.1.qcow2│
-│  (MinIO, persistent)                     (MinIO → GitHub Release) │
+│  COMPLETE IMAGE (pro Release, ~40 min mit Ollama-Cache)         │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ • Debian 13 (Trixie) + Docker CE                           │ │
+│  │ • systemd-networkd + SSH Hardening + Kernel Tuning         │ │
+│  │ • Ollama + Models (~20 GB) ← aus Cache, kein Download!     │ │
+│  │ • /opt/network-agent/ (Docker Compose Files)               │ │
+│  │ • Docker Images (ghcr.io) für Offline-Betrieb              │ │
+│  │ • First-boot Setup + Firewall Rules                        │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                              ↓                                   │
+│              network-agent-0.10.1.qcow2 → GitHub Release        │
 │                                                                  │
+│  USER STARTET VM → FERTIGE APPLIANCE (keine Internet nötig!)    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Vorteil:** Release-Builds dauern ~10 min statt ~50 min (Ollama bereits im Base Image)
+**Vorteil:** User startet VM und hat sofort funktionsfähige Appliance.
 
-#### Workflows
-
-| Workflow | Trigger | Frequenz | Dauer | Output |
-|----------|---------|----------|-------|--------|
-| `base-appliance.yml` | Manuell / Cron (1. des Monats) | Monatlich | ~40 min | `appliance-base/` bucket |
-| `appliance-build.yml` | Release / Manuell | Pro Release | ~15 min | GitHub Release |
+#### Workflow
 
 ```yaml
-# Base Image bauen (monatlich)
-gh workflow run base-appliance.yml -f base_version=2026-01
-
-# Layer Build (pro Release)
-gh workflow run appliance-build.yml -f version=0.10.1 -f base_version=latest
+# Appliance bauen
+gh workflow run appliance-build.yml -f version=0.10.1
 ```
 
-**Jobs (appliance-build.yml, 3 jobs, MinIO for fast transfer):**
+**Jobs (appliance-build.yml, 3 jobs):**
 
 | Job | Runner | Timeout | Description |
 |-----|--------|---------|-------------|
-| `validate` | ubuntu-latest | 10m | Validate Packer templates + docker-compose |
-| `build` | **self-hosted** | 30m | Download base, build layer, upload to MinIO |
-| `e2e-test` | **self-hosted** | 30m | Download from MinIO, test VM, upload to Release |
+| `validate` | ubuntu-latest | 10m | Validate Packer template + docker-compose |
+| `build` | **self-hosted** | 90m | Complete build with Ollama cache |
+| `e2e-test` | **self-hosted** | 30m | Test VM, upload to Release |
 
-**Job Dependencies:**
-```
-validate → build → e2e-test
-              ↓         ↓
-         (downloads   (on release: upload
-          base from    to GitHub Release)
-          MinIO)
-```
+**Ollama Model Cache:**
+- Persistenter Cache auf Runner: `/opt/ollama-cache/ollama-models.tar.zst` (~15GB)
+- Spart ~40GB Download pro Build
+- Build-Zeit mit Cache: ~40 min (statt ~90 min ohne Cache)
 
 **MinIO Artifact Storage:**
 
 | Aspekt | Wert |
 |--------|------|
 | Server | 10.0.0.165:9000 (Proxmox LXC 160) |
-| Buckets | `appliance-base` (persistent), `appliance-builds` (temp) |
-| Retention | Keine - Cleanup nach E2E-Job |
+| Bucket | `appliance-builds` (temp, auto-cleanup) |
 | Transfer Speed | ~100 MB/s (LAN) vs ~5 MB/s (GitHub Artifacts) |
-
-**Bucket-Struktur:**
-```
-appliance-base/              # Persistent (manuelles Cleanup)
-  ├── base-2026-01.qcow2.zst
-  ├── base-latest.qcow2.zst  # Symlink to latest
-  └── SHA256SUMS-2026-01
-
-appliance-builds/            # Temporary (auto-cleanup nach E2E)
-  └── 0.10.1/
-      ├── *.part-*
-      ├── SHA256SUMS
-      └── install-network-agent.sh
-```
 
 **Secrets:**
 - `MINIO_ENDPOINT` - MinIO Server URL
 - `MINIO_ACCESS_KEY` - Access Key
 - `MINIO_SECRET_KEY` - Secret Key
 
-**Benefits:**
-- Layered Build: ~10 min statt ~50 min pro Release
-- Inter-Job Transfer: 5 min statt 75 min (15x schneller)
-- E2E failure: Re-run only `e2e-test` (~10 min)
-- Release Upload: Direkt vom E2E-Job nach erfolgreichem Test
-- Re-run command: `gh run rerun <run-id> --job e2e-test`
-
-**Why Self-hosted + MinIO?**
+**Why Self-hosted?**
 - GitHub-hosted runners only have ~14GB disk (image is 30GB+)
 - Packer requires KVM/QEMU (not available on GitHub-hosted)
-- Build requires ~32GB RAM for Ollama model download
-- GitHub Artifact upload rate-limited to ~5 MB/s (27GB = 75 min)
+- Ollama cache persistent on self-hosted runner
 
 ### 2.7 Docker Build Workflow (`.github/workflows/docker-build.yml`)
 
@@ -382,8 +347,7 @@ gh api /repos/obtFusi/network-agent/actions/runners --jq '.runners[]'
 | RAM | 2 GB |
 | CPU | 2 Cores |
 | Disk | 50 GB |
-| Buckets | `appliance-base` (persistent), `appliance-builds` (temp) |
-| Retention | Keine (Cleanup nach E2E-Job)
+| Bucket | `appliance-builds` (temp, auto-cleanup nach E2E) |
 
 **Warum MinIO statt GitHub Artifacts?**
 
@@ -417,7 +381,6 @@ ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc rm --recursive --force loc
 | MinIO nicht erreichbar | `pct start 160` auf Proxmox |
 | Upload fehlschlägt | Secrets prüfen, Netzwerk testen |
 | Bucket voll | `mc rm --recursive minio/appliance-builds/OLD_VERSION/` |
-| appliance-base voll | Alte Base-Images manuell löschen |
 | Credentials vergessen | `ssh root@10.0.0.69 "pct exec 160 -- cat /etc/minio.env"` |
 
 ---
