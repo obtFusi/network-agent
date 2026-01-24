@@ -1,16 +1,20 @@
 name: Appliance Build
 
+# ONE-CLICK APPLIANCE BUILD
+# Builds a complete, ready-to-use VM appliance with everything included:
+# - Debian 13 + Docker + Ollama + Models (from cache)
+# - Network Agent Docker Images + Config
+# - First-boot setup + Firewall
+#
+# Ollama models are cached on the runner (~15GB tarball) for fast builds.
+
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (e.g., 0.4.0)'
+        description: 'Version (e.g., 0.10.1)'
         required: true
         type: string
-      base_version:
-        description: 'Base image version (e.g., 2026-01, or "latest")'
-        type: string
-        default: 'latest'
       skip_test:
         description: 'Skip E2E test (for debugging)'
         type: boolean
@@ -52,18 +56,13 @@ jobs:
 
       - name: Initialize Packer plugins
         working-directory: infrastructure/packer
-        run: |
-          # Init each template separately to avoid variable conflicts
-          packer init layer.pkr.hcl
-          packer init base.pkr.hcl
+        run: packer init base.pkr.hcl
 
-      - name: Validate Packer templates
+      - name: Validate Packer template
         working-directory: infrastructure/packer
         run: |
-          # Validate layer template (used for release builds)
-          packer validate -var "version=0.0.0" -var "base_image=dummy.qcow2" layer.pkr.hcl
-          # Validate base template (used for monthly builds)
-          packer validate -var "base_version=2026-01" base.pkr.hcl
+          # Validate appliance template
+          packer validate -var "version=0.0.0" base.pkr.hcl
 
       - name: Validate docker-compose files
         run: |
@@ -74,7 +73,7 @@ jobs:
                         -f infrastructure/docker/docker-compose.online.yml config --quiet
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # BUILD JOB: Creates qcow2 image, compresses, splits, uploads to MinIO
+  # BUILD JOB: Complete appliance build from scratch (with Ollama cache)
   # ═══════════════════════════════════════════════════════════════════════════
   build:
     name: Build Appliance
@@ -150,53 +149,86 @@ jobs:
           fi
           ls -la /dev/kvm
 
+      # ═══════════════════════════════════════════════════════════
+      # OLLAMA CACHE (persistent on runner, saves 40GB download)
+      # ═══════════════════════════════════════════════════════════
+
+      - name: Prepare Ollama model cache
+        env:
+          OLLAMA_MODEL: 'qwen3:30b-a3b'
+        run: |
+          CACHE_DIR="/opt/ollama-cache"
+          ARCHIVE_PATH="$CACHE_DIR/ollama-models.tar.zst"
+
+          # Check if tarball cache exists (>1GB = valid)
+          ARCHIVE_SIZE=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo 0)
+          if [[ "$ARCHIVE_SIZE" -gt 1000000000 ]]; then
+            echo "✅ Ollama cache exists ($(numfmt --to=iec $ARCHIVE_SIZE))"
+            ls -lh "$ARCHIVE_PATH"
+          else
+            echo "📥 No cache found, downloading models..."
+            sudo mkdir -p "$CACHE_DIR"
+            sudo chown runner:runner "$CACHE_DIR"
+
+            # Install Ollama on runner if not present
+            if ! command -v ollama &> /dev/null; then
+              curl -fsSL https://ollama.com/install.sh | sudo sh
+            fi
+
+            # Wait for Ollama service
+            echo "⏳ Waiting for Ollama service..."
+            for i in {1..30}; do
+              if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
+                echo "✅ Ollama ready"
+                break
+              fi
+              sleep 2
+            done
+
+            # Ensure Ollama storage dir exists with correct permissions
+            sudo mkdir -p /usr/share/ollama/.ollama
+            sudo chown -R ollama:ollama /usr/share/ollama
+            sudo systemctl restart ollama
+            sleep 3
+
+            # Pull models
+            ollama pull "$OLLAMA_MODEL"
+            ollama pull "qwen3:4b-instruct-2507-q4_K_M"
+
+            # Create tarball DIRECTLY from Ollama storage (saves 40GB disk!)
+            echo "📦 Creating tarball..."
+            cd /usr/share/ollama/.ollama
+            sudo tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
+            sudo chown runner:runner "$ARCHIVE_PATH"
+            echo "✅ Tarball: $(ls -lh "$ARCHIVE_PATH" | awk '{print $5}')"
+
+            # DELETE models after tarball (saves 40GB)
+            echo "🧹 Cleaning up..."
+            sudo rm -rf /usr/share/ollama/.ollama/models
+            df -h /
+          fi
+
+          # Symlink for Packer HTTP server
+          mkdir -p infrastructure/packer/http
+          ln -sf "$ARCHIVE_PATH" infrastructure/packer/http/ollama-models.tar.zst
+
       - name: Initialize Packer
         working-directory: infrastructure/packer
-        run: packer init layer.pkr.hcl
+        run: packer init base.pkr.hcl
 
       # ═══════════════════════════════════════════════════════════
-      # BUILD PHASE (Layered: download base → build layer)
+      # BUILD PHASE (complete appliance from Debian ISO)
       # ═══════════════════════════════════════════════════════════
 
-      - name: Download base image from MinIO
-        env:
-          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
-          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
-          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
-          BASE_VERSION: ${{ inputs.base_version || 'latest' }}
-        run: |
-          # Install mc client
-          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
-          chmod +x /tmp/mc
-
-          # Configure alias
-          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
-
-          # Create input directory
-          mkdir -p infrastructure/packer/input
-
-          # Download base image (no compression - saves only 0.3%)
-          BASE_FILE="base-${BASE_VERSION}.qcow2"
-          echo "Downloading base image: $BASE_FILE"
-          /tmp/mc cp minio/appliance-base/${BASE_FILE} infrastructure/packer/input/
-
-          # Rename to expected name
-          cd infrastructure/packer/input
-          mv ${BASE_FILE} base.qcow2
-          ls -lh base.qcow2
-          echo "BASE_IMAGE=input/base.qcow2" >> $GITHUB_ENV
-
-      - name: Build layer qcow2 Image
+      - name: Build appliance qcow2 image
         working-directory: infrastructure/packer
         run: |
           VERSION_CLEAN="${VERSION#v}"
-          echo "Building layer for version: $VERSION_CLEAN"
-          echo "Using base image: $BASE_IMAGE"
+          echo "Building complete appliance version: $VERSION_CLEAN"
           packer build \
             -var "version=${VERSION_CLEAN}" \
-            -var "base_image=${BASE_IMAGE}" \
             -on-error=abort \
-            layer.pkr.hcl
+            base.pkr.hcl
 
       - name: Verify build output
         run: |
@@ -204,29 +236,19 @@ jobs:
           QCOW2_FILE=$(ls infrastructure/packer/output/*.qcow2)
           echo "Built image: $QCOW2_FILE"
           echo "QCOW2_FILE=$QCOW2_FILE" >> $GITHUB_ENV
-
-      - name: Compress with zstd
-        run: |
-          cd infrastructure/packer/output
-          VERSION_CLEAN="${VERSION#v}"
-
-          echo "Compressing with zstd (fast mode)..."
-          zstd -1 -T0 -v *.qcow2 -o "network-agent-${VERSION_CLEAN}.qcow2.zst"
-
-          echo "Compressed size:"
-          ls -lh *.zst
-
-          echo "Removing original qcow2 to free space..."
-          rm -f *.qcow2
           df -h .
 
-      - name: Split into parts
+      - name: Split into parts (no compression)
         run: |
           cd infrastructure/packer/output
           VERSION_CLEAN="${VERSION#v}"
 
-          echo "Splitting into 1.9GB parts..."
-          split -b 1900M -a 2 "network-agent-${VERSION_CLEAN}.qcow2.zst" "network-agent-${VERSION_CLEAN}.qcow2.zst.part-"
+          # Rename qcow2 to final name
+          QCOW2=$(ls *.qcow2)
+          mv "$QCOW2" "network-agent-${VERSION_CLEAN}.qcow2"
+
+          echo "Splitting into 1.9GB parts (no zstd - only 0.3% savings)..."
+          split -b 1900M -a 2 "network-agent-${VERSION_CLEAN}.qcow2" "network-agent-${VERSION_CLEAN}.qcow2.part-"
 
           # Rename numeric suffixes to alpha (aa, ab, ac, etc.)
           for f in *.part-[0-9][0-9]; do
@@ -238,9 +260,11 @@ jobs:
             fi
           done
 
-          rm -f "network-agent-${VERSION_CLEAN}.qcow2.zst"
+          # Delete original qcow2 after splitting
+          rm -f "network-agent-${VERSION_CLEAN}.qcow2"
           echo "Parts created:"
           ls -lh *.part-*
+          df -h .
 
       - name: Generate checksums
         run: |
@@ -367,14 +391,13 @@ jobs:
           ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
 
-          # Stream decompressed image directly to Proxmox (no temp files on runner)
-          # Decompression on runner, only final qcow2 (32GB) goes over network
+          # Stream image directly to Proxmox (no compression - only 0.3% savings)
           BUILD_TMP="/root/build-tmp"
           ssh -o StrictHostKeyChecking=no root@$PVE_HOST "mkdir -p $BUILD_TMP"
 
-          echo "Streaming decompressed image to Proxmox..."
+          echo "Streaming image parts to Proxmox..."
           cd infrastructure/packer/output
-          cat *.part-* | zstd -d | ssh root@$PVE_HOST "cat > $BUILD_TMP/network-agent-test.qcow2"
+          cat *.part-* | ssh root@$PVE_HOST "cat > $BUILD_TMP/network-agent-test.qcow2"
 
           echo "Verifying image on Proxmox..."
           ssh root@$PVE_HOST "ls -lh $BUILD_TMP/network-agent-test.qcow2"

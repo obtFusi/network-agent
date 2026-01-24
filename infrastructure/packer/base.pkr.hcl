@@ -1,15 +1,20 @@
-# Network Agent Base Appliance - Packer Template
-# Builds a base qcow2 image with Debian, Docker, and Ollama
-# This is the foundation for layered builds - updated monthly
+# Network Agent Appliance - Packer Template
+# Builds a COMPLETE qcow2 appliance image with everything included:
+#   - Debian 13 (Trixie) + Docker CE
+#   - Ollama + Models (from cache)
+#   - Network Agent Docker Images (from ghcr.io)
+#   - First-boot setup + Firewall
+#
+# ONE-CLICK SOLUTION: User starts VM and gets ready-to-use appliance
 #
 # Prerequisites:
 #   - KVM/QEMU with hardware virtualization
 #   - Packer >= 1.11.0
-#   - Internet access for Debian install
+#   - Ollama model cache at http/ollama-models.tar.zst
 #
 # Build:
 #   packer init .
-#   packer build -var "base_version=2026-01" base.pkr.hcl
+#   packer build -var "version=0.10.1" base.pkr.hcl
 
 packer {
   required_plugins {
@@ -21,9 +26,9 @@ packer {
 }
 
 # Variables
-variable "base_version" {
+variable "version" {
   type        = string
-  description = "Base image version (e.g., 2026-01 for January 2026)"
+  description = "Appliance version (e.g., 0.10.1)"
 }
 
 variable "debian_iso_url" {
@@ -65,14 +70,14 @@ variable "ollama_model" {
 
 # Local variables
 locals {
-  output_name = "base-${var.base_version}"
+  output_name = "network-agent-${var.version}"
 }
 
 # QEMU Builder - produces qcow2 directly
-source "qemu" "base" {
+source "qemu" "appliance" {
   iso_url          = var.debian_iso_url
   iso_checksum     = var.debian_iso_checksum
-  output_directory = "output-base"
+  output_directory = "output"
 
   vm_name          = "${local.output_name}.qcow2"
   format           = "qcow2"
@@ -129,8 +134,8 @@ source "qemu" "base" {
 
 # Build configuration
 build {
-  name    = "base"
-  sources = ["source.qemu.base"]
+  name    = "appliance"
+  sources = ["source.qemu.appliance"]
 
   # Step 1: Base packages
   provisioner "shell" {
@@ -228,28 +233,78 @@ build {
     execute_command = "chmod +x {{ .Path }}; {{ .Vars }} {{ .Path }}"
   }
 
-  # Step 8: Write base version marker
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NETWORK AGENT LAYER (everything needed for one-click appliance)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Step 8: Create target directory
+  provisioner "shell" {
+    inline = ["mkdir -p /opt/network-agent"]
+  }
+
+  # Step 9: Copy Docker Compose files and configs
+  provisioner "file" {
+    source      = "../docker/"
+    destination = "/opt/network-agent/"
+  }
+
+  # Step 10: Copy first-boot script
+  provisioner "file" {
+    source      = "../scripts/first-boot.sh"
+    destination = "/opt/network-agent/first-boot.sh"
+  }
+
+  # Step 11: Write version file
   provisioner "shell" {
     inline = [
-      "echo '${var.base_version}' > /etc/network-agent-base-version"
+      "echo '${var.version}' > /opt/network-agent/VERSION"
     ]
   }
 
-  # Step 9: APT Cleanup + Shutdown (skip machine-id/ssh keys - done in layer)
+  # Step 12: Pull Docker images from ghcr.io for offline use
+  provisioner "shell" {
+    inline = [
+      "# Start Docker (may not be running yet)",
+      "systemctl start docker",
+      "sleep 5",
+      "# Pull images",
+      "cd /opt/network-agent && VERSION=${var.version} docker compose pull"
+    ]
+  }
+
+  # Step 13: First-boot setup + Firewall configuration
+  provisioner "shell" {
+    scripts = [
+      "scripts/05-first-boot-setup.sh",
+      "scripts/06-configure-firewall.sh"
+    ]
+    environment_vars = [
+      "DEBIAN_FRONTEND=noninteractive",
+      "VERSION=${var.version}"
+    ]
+    execute_command = "chmod +x {{ .Path }}; {{ .Vars }} {{ .Path }}"
+  }
+
+  # Step 14: Final cleanup + Shutdown
   provisioner "shell" {
     skip_clean        = true
     expect_disconnect = true
     inline = [
-      "# APT Offline",
+      "# Stop Docker cleanly",
+      "systemctl stop docker",
+      "# APT Offline (no updates needed in appliance)",
       "cp /etc/apt/sources.list /etc/apt/sources.list.backup 2>/dev/null || true",
       "echo '# Disabled for offline mode' > /etc/apt/sources.list",
       "mv /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.list.disabled",
       "apt-get clean && rm -rf /var/lib/apt/lists/*",
-      "# Basic cleanup (NOT machine-id/ssh keys - those are per-release)",
+      "# Final cleanup",
       "journalctl --vacuum-time=1s",
       "rm -rf /tmp/* /var/tmp/*",
-      "# Zero free space for better compression (1GB is enough for sparse qcow2)",
-      "dd if=/dev/zero of=/EMPTY bs=1M count=1024 2>/dev/null || true",
+      "# Reset machine identity (unique per deployment)",
+      "rm -f /etc/ssh/ssh_host_*",
+      "truncate -s 0 /etc/machine-id",
+      "# Zero free space for better compression",
+      "dd if=/dev/zero of=/EMPTY bs=1M count=2048 2>/dev/null || true",
       "rm -f /EMPTY",
       "sync",
       "# Shutdown",
