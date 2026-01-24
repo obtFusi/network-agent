@@ -469,74 +469,15 @@ GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
 
 **Zweck:** Bottleneck-Analyse und Optimierung der Appliance-Builds
 
-**Skripte:**
-| Skript | Wo läuft es? | Zweck |
-|--------|--------------|-------|
-| `infrastructure/scripts/telemetry.sh` | GitHub Actions Runner | Trackt GitHub Actions Steps |
-| `infrastructure/packer/scripts/packer-telemetry.sh` | Packer VM | Trackt Packer Provisioner Steps |
-| `infrastructure/scripts/telemetry-report.sh` | Lokal | Report-Tool für gespeicherte Telemetrie |
+**Details:** Siehe [docs/telemetry.md](../docs/telemetry.md) für vollständige Dokumentation.
 
-**Erfasste Metriken pro Step:**
-
-| Metrik | Beschreibung | Bottleneck-Indikator |
-|--------|--------------|---------------------|
-| `duration_s` | Step-Dauer in Sekunden | >60s = langer Step |
-| `cpu_percent` | CPU-Auslastung (avg) | >80% = CPU-bound |
-| `memory_used_mb` | RAM-Verbrauch | >8GB = speicherintensiv |
-| `disk_read_mb` | Gelesene Daten | - |
-| `disk_write_mb` | Geschriebene Daten | >1GB = I/O-intensiv |
-| `disk_util_percent` | Disk-Auslastung (io_time/elapsed) | >80% = Disk saturiert |
-| `await_ms` | Durchschn. I/O-Wartezeit pro Op | >10ms = langsame Disk |
-| `queue_depth` | Durchschn. I/O-Queue-Tiefe | >4 = I/O-Stau |
-| `net_rx_mb` | Netzwerk Download | >500MB = Download-heavy |
-| `net_tx_mb` | Netzwerk Upload | - |
-
-**Datenquellen (Linux):**
-```
-CPU:     /proc/stat (idle ticks)
-Memory:  /proc/meminfo (MemTotal, MemAvailable)
-Disk:    /proc/diskstats (reads, writes, sectors, io_time, weighted_io)
-Network: /proc/net/dev (rx_bytes, tx_bytes)
-```
-
-**Telemetrie-Ablauf:**
-```
-1. telemetry_start "StepName"
-   └─ Speichert Start-Metriken in temp files
-
-2. ... eigentliche Arbeit ...
-   └─ Metriken werden in Echtzeit im Log ausgegeben
-
-3. telemetry_end "StepName"
-   └─ Berechnet Deltas, gibt Metriken aus
-   └─ Speichert in summary.csv / JSON
-
-4. telemetry_summary (am Ende)
-   └─ Zeigt alle Steps + Bottleneck-Analyse
-```
-
-**Speicherung in MinIO:**
-```
-minio/appliance-telemetry/
-├── latest/
-│   ├── build_0.10.2.json      # Neuester Build
-│   └── e2e_0.10.2.json        # Neuester E2E-Test
-└── 0.10.2/
-    └── 20260124_120000/       # Timestamp-basiert
-        ├── build_*.json
-        └── packer_steps.txt   # Packer-interne Telemetrie
-```
-
-**Report-Tool Befehle:**
+**Quick Reference:**
 ```bash
 # Letzten Build anzeigen (mit Bottleneck-Analyse)
 ./infrastructure/scripts/telemetry-report.sh latest
 
 # Letzten E2E-Test anzeigen
 ./infrastructure/scripts/telemetry-report.sh latest e2e
-
-# Verfügbare Telemetrie auflisten
-./infrastructure/scripts/telemetry-report.sh list
 
 # Zwei Versionen vergleichen
 ./infrastructure/scripts/telemetry-report.sh compare 0.10.1 0.10.2
@@ -545,36 +486,14 @@ minio/appliance-telemetry/
 ./infrastructure/scripts/telemetry-report.sh history 5
 ```
 
-**Realtime-Monitoring:**
-Telemetrie wird im GitHub Actions Log in Echtzeit ausgegeben:
-```
-═══════════════════════════════════════════════════════════════════════
-⏱️  [packer_build] START: 2026-01-24T12:00:00+00:00
-───────────────────────────────────────────────────────────────────────
-... Packer output ...
-───────────────────────────────────────────────────────────────────────
-⏱️  [packer_build] END: 2026-01-24T12:35:00+00:00
+**Wichtigste Metriken:**
+- `duration_s` - Step-Dauer
+- `disk_util_percent` - Disk-Auslastung (>80% = Bottleneck)
+- `await_ms` - I/O-Wartezeit (>10ms = langsam)
+- `queue_depth` - I/O-Queue-Tiefe (>4 = Stau)
+- `net_rx_mb` - Downloads (für Cache-Optimierung)
 
-  Duration:      2100.5s
-  CPU:           ~45% avg
-  Memory:        4200MB used (delta 1500MB)
-  Disk Read:     150MB (4MB/s, 12000 ops)
-  Disk Write:    25600MB (12MB/s, 89000 ops)
-  Disk I/O:      util=65%, await=3ms, queue=1.2
-  Net RX:        890MB (0MB/s)
-  Net TX:        5MB (0MB/s)
-═══════════════════════════════════════════════════════════════════════
-```
-
-**Typische Bottlenecks erkennen:**
-
-| Symptom | Ursache | Lösung |
-|---------|---------|--------|
-| `disk_util=100%` | Disk vollständig ausgelastet | Parallele I/O reduzieren, SSD verwenden |
-| `await>20ms` | Langsame Disk oder Queueing | Caching, weniger gleichzeitige Ops |
-| `queue>8` | I/O-Stau, zu viele parallele Ops | Sequential statt parallel schreiben |
-| `net_rx` sehr hoch | Viele Downloads | Lokales Caching (wie Ollama-Cache) |
-| `cpu=100%` + lange `duration` | CPU-bound Operation | Parallelisierung oder schnellere CPU |
+**Realtime:** Telemetrie erscheint live in GitHub Actions Logs
 
 ---
 
