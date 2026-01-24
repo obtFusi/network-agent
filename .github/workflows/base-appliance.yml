@@ -117,6 +117,11 @@ jobs:
               sleep 2
             done
 
+            # Ensure Ollama storage dir exists with correct permissions
+            # (may have been deleted by previous cleanup)
+            sudo mkdir -p /usr/share/ollama/.ollama
+            sudo chown -R ollama:ollama /usr/share/ollama
+
             # Pull models to temp location
             TEMP_MODELS="$CACHE_DIR/models"
             export OLLAMA_MODELS="$TEMP_MODELS"
