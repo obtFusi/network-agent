@@ -177,12 +177,22 @@ jobs:
           CACHE_DIR="/opt/ollama-cache"
           ARCHIVE_PATH="$CACHE_DIR/ollama-models.tar.zst"
 
-          # Check if tarball cache exists (>1GB = valid)
+          # Check if tarball cache exists and is valid
           ARCHIVE_SIZE=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo 0)
+          CACHE_VALID=false
           if [[ "$ARCHIVE_SIZE" -gt 1000000000 ]]; then
-            echo "✅ Ollama cache exists ($(numfmt --to=iec $ARCHIVE_SIZE))"
-            ls -lh "$ARCHIVE_PATH"
-          else
+            echo "🔍 Checking cache integrity..."
+            if zstd -t "$ARCHIVE_PATH" 2>/dev/null; then
+              echo "✅ Ollama cache valid ($(numfmt --to=iec $ARCHIVE_SIZE))"
+              ls -lh "$ARCHIVE_PATH"
+              CACHE_VALID=true
+            else
+              echo "⚠️ Cache corrupted, will re-download"
+              rm -f "$ARCHIVE_PATH"
+            fi
+          fi
+
+          if [[ "$CACHE_VALID" != "true" ]]; then
             echo "📥 No cache found, downloading models..."
             sudo mkdir -p "$CACHE_DIR"
             sudo chown runner:runner "$CACHE_DIR"
@@ -215,9 +225,19 @@ jobs:
             # Create tarball DIRECTLY from Ollama storage (saves 40GB disk!)
             echo "📦 Creating tarball..."
             cd /usr/share/ollama/.ollama
-            sudo tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
-            sudo chown runner:runner "$ARCHIVE_PATH"
-            echo "✅ Tarball: $(ls -lh "$ARCHIVE_PATH" | awk '{print $5}')"
+            # Use temp file to ensure atomicity
+            TEMP_ARCHIVE="${ARCHIVE_PATH}.tmp"
+            sudo tar -cf - models/ | zstd -3 -T0 > "$TEMP_ARCHIVE"
+            # Verify tarball integrity before finalizing
+            if zstd -t "$TEMP_ARCHIVE"; then
+              mv "$TEMP_ARCHIVE" "$ARCHIVE_PATH"
+              sudo chown runner:runner "$ARCHIVE_PATH"
+              echo "✅ Tarball verified: $(ls -lh "$ARCHIVE_PATH" | awk '{print $5}')"
+            else
+              rm -f "$TEMP_ARCHIVE"
+              echo "❌ Tarball creation failed, exiting"
+              exit 1
+            fi
 
             # DELETE models after tarball (saves 40GB)
             echo "🧹 Cleaning up..."
@@ -228,6 +248,16 @@ jobs:
           # Symlink for Packer HTTP server
           mkdir -p infrastructure/packer/http
           ln -sf "$ARCHIVE_PATH" infrastructure/packer/http/ollama-models.tar.zst
+
+          # Final verification of symlink target
+          LINKED_FILE=$(readlink -f infrastructure/packer/http/ollama-models.tar.zst)
+          echo "📋 Symlink points to: $LINKED_FILE"
+          ls -lh "$LINKED_FILE"
+          if ! zstd -t "$LINKED_FILE"; then
+            echo "❌ Model archive failed integrity check!"
+            exit 1
+          fi
+          echo "✅ Model archive ready for Packer HTTP server"
 
           telemetry_step_end "ollama_cache_prepare"
 
