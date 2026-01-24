@@ -155,6 +155,7 @@
 # 
 #   # Step 1: Base packages
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step1_Base_packages'",
@@ -168,6 +169,7 @@
 # 
 #   # Step 2: Docker CE from docker.com
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step2_Docker_CE'",
@@ -184,6 +186,7 @@
 # 
 #   # Step 3: Hostname & Network (systemd-networkd replaces ifupdown)
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step3_Network_Config'",
@@ -209,6 +212,7 @@
 # 
 #   # Step 4: SSH Hardening
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step4_SSH_Hardening'",
@@ -225,6 +229,7 @@
 # 
 #   # Step 5: Kernel Tuning
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step5_Kernel_Tuning'",
@@ -243,6 +248,7 @@
 # 
 #   # Step 6: User Limits
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step6_User_Limits'",
@@ -254,6 +260,7 @@
 # 
 #   # Step 7a: Download Ollama models via HTTP (FAST: parallel, ~500MB/s vs SCP ~100MB/s)
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step7a_Download_Models'",
@@ -267,6 +274,7 @@
 # 
 #   # Step 7b: Extract Ollama models
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step7b_Extract_Models'",
@@ -282,6 +290,7 @@
 # 
 #   # Step 7c: Ollama + Models (uses cache if available)
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step7c_Ollama_Install'"
@@ -298,6 +307,7 @@
 #     execute_command = "chmod +x {{ .Path }}; {{ .Vars }} {{ .Path }}"
 #   }
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_end 'Step7c_Ollama_Install'"
@@ -310,6 +320,7 @@
 # 
 #   # Step 8: Create target directory
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step8_Create_Dir'",
@@ -320,6 +331,7 @@
 # 
 #   # Step 9: Copy Docker Compose files and configs
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step9_Copy_Compose'"
@@ -330,6 +342,7 @@
 #     destination = "/opt/network-agent/"
 #   }
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_end 'Step9_Copy_Compose'"
@@ -338,6 +351,7 @@
 # 
 #   # Step 10: Copy first-boot script
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step10_Copy_FirstBoot'"
@@ -348,6 +362,7 @@
 #     destination = "/opt/network-agent/first-boot.sh"
 #   }
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_end 'Step10_Copy_FirstBoot'"
@@ -356,6 +371,7 @@
 # 
 #   # Step 11: Write version file
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step11_Write_Version'",
@@ -366,6 +382,7 @@
 # 
 #   # Step 12: Pull Docker images from ghcr.io for offline use
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step12_Docker_Pull'",
@@ -378,6 +395,7 @@
 # 
 #   # Step 13: First-boot setup + Firewall configuration
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step13_FirstBoot_Firewall'"
@@ -395,6 +413,7 @@
 #     execute_command = "chmod +x {{ .Path }}; {{ .Vars }} {{ .Path }}"
 #   }
 #   provisioner "shell" {
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_end 'Step13_FirstBoot_Firewall'"
@@ -405,6 +424,7 @@
 #   provisioner "shell" {
 #     skip_clean        = true
 #     expect_disconnect = true
+#     inline_shebang = "/bin/bash -e"
 #     inline = [
 #       "source /usr/local/bin/telemetry.sh",
 #       "telemetry_start 'Step14_Cleanup_Shutdown'",
