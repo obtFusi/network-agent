@@ -193,17 +193,21 @@ build {
     ]
   }
 
-  # Step 7a: Copy cached Ollama models from host (FAST: ~2min instead of 25min)
-  # NOTE: Use /var/tmp (disk-backed) not /tmp (tmpfs, limited to ~8GB)
-  provisioner "file" {
-    source      = "/tmp/ollama-models.tar.zst"
-    destination = "/var/tmp/ollama-models.tar.zst"
-  }
-
-  # Step 7b: Extract and setup Ollama models
+  # Step 7a: Download Ollama models via HTTP (FAST: parallel, ~500MB/s vs SCP ~100MB/s)
+  # Uses Packer's built-in HTTP server - much faster than SCP file provisioner
   provisioner "shell" {
     inline = [
-      "echo '=== Extracting cached Ollama models ==='",
+      "echo '=== Downloading Ollama models via HTTP ==='",
+      "cd /var/tmp",
+      "wget -q --show-progress http://{{ .HTTPIP }}:{{ .HTTPPort }}/ollama-models.tar.zst -O ollama-models.tar.zst",
+      "ls -lh ollama-models.tar.zst"
+    ]
+  }
+
+  # Step 7b: Extract Ollama models
+  provisioner "shell" {
+    inline = [
+      "echo '=== Extracting Ollama models ==='",
       "mkdir -p /tmp/ollama-cache",
       "zstd -d /var/tmp/ollama-models.tar.zst -o /var/tmp/ollama-models.tar",
       "tar -xf /var/tmp/ollama-models.tar -C /tmp/ollama-cache",
