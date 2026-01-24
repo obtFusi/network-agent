@@ -124,27 +124,19 @@ jobs:
             sudo systemctl restart ollama
             sleep 3
 
-            # Pull models to temp location
-            TEMP_MODELS="$CACHE_DIR/models"
-            export OLLAMA_MODELS="$TEMP_MODELS"
-            mkdir -p "$TEMP_MODELS"
+            # Pull models (Ollama stores in /usr/share/ollama/.ollama/models)
             ollama pull "$OLLAMA_MODEL"
             ollama pull "qwen3:4b-instruct-2507-q4_K_M"
 
-            # Copy from Ollama default location
-            sudo cp -r /usr/share/ollama/.ollama/models "$CACHE_DIR/"
-            sudo chown -R runner:runner "$CACHE_DIR"
-
-            # Create tarball
-            echo "📦 Creating tarball..."
-            cd "$CACHE_DIR"
-            tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
+            # Create tarball DIRECTLY from Ollama storage (no copy = saves 40GB disk!)
+            echo "📦 Creating tarball directly from Ollama storage..."
+            cd /usr/share/ollama/.ollama
+            sudo tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
+            sudo chown runner:runner "$ARCHIVE_PATH"
             echo "✅ Tarball: $(ls -lh "$ARCHIVE_PATH" | awk '{print $5}')"
 
-            # DELETE models to save disk space (tarball is the cache)
-            echo "🧹 Cleaning up models dir to save space..."
-            rm -rf "$TEMP_MODELS"
-            # Clean Ollama models only (keep .ollama config/keys for next pull)
+            # DELETE models after tarball is complete (saves 40GB)
+            echo "🧹 Cleaning up Ollama models..."
             sudo rm -rf /usr/share/ollama/.ollama/models
             df -h /
           fi
