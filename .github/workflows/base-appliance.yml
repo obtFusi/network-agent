@@ -175,25 +175,18 @@ jobs:
           QCOW2_FILE=$(ls infrastructure/packer/output-base/*.qcow2)
           echo "Built image: $QCOW2_FILE"
 
-      - name: Compress with zstd
+      - name: Rename and checksum
         run: |
           cd infrastructure/packer/output-base
           BASE_VERSION="${{ steps.version.outputs.BASE_VERSION }}"
 
-          echo "Compressing with zstd..."
-          zstd -3 -T0 -v *.qcow2 -o "base-${BASE_VERSION}.qcow2.zst"
+          # Rename to versioned name
+          mv *.qcow2 "base-${BASE_VERSION}.qcow2"
 
-          echo "Compressed size:"
-          ls -lh *.zst
-
-          echo "Removing original qcow2..."
-          rm -f *.qcow2
-
-      - name: Generate checksum
-        run: |
-          cd infrastructure/packer/output-base
-          sha256sum *.zst > SHA256SUMS
+          # Generate checksum
+          sha256sum *.qcow2 > SHA256SUMS
           cat SHA256SUMS
+          ls -lh
 
       - name: Upload to MinIO (appliance-base bucket)
         env:
@@ -210,12 +203,12 @@ jobs:
           # Configure alias
           /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
 
-          # Upload to persistent base bucket
-          /tmp/mc cp infrastructure/packer/output-base/base-${BASE_VERSION}.qcow2.zst minio/appliance-base/
+          # Upload to persistent base bucket (no compression - saves only 0.3%)
+          /tmp/mc cp infrastructure/packer/output-base/base-${BASE_VERSION}.qcow2 minio/appliance-base/
           /tmp/mc cp infrastructure/packer/output-base/SHA256SUMS minio/appliance-base/SHA256SUMS-${BASE_VERSION}
 
           # Also upload as "latest" for convenience
-          /tmp/mc cp infrastructure/packer/output-base/base-${BASE_VERSION}.qcow2.zst minio/appliance-base/base-latest.qcow2.zst
+          /tmp/mc cp infrastructure/packer/output-base/base-${BASE_VERSION}.qcow2 minio/appliance-base/base-latest.qcow2
 
           # Verify upload
           echo "Uploaded to MinIO appliance-base:"
@@ -236,7 +229,7 @@ jobs:
           echo "- **Version:** $BASE_VERSION" >> $GITHUB_STEP_SUMMARY
           echo "- **Location:** MinIO appliance-base bucket" >> $GITHUB_STEP_SUMMARY
           echo "- **Files:**" >> $GITHUB_STEP_SUMMARY
-          echo "  - \`base-${BASE_VERSION}.qcow2.zst\`" >> $GITHUB_STEP_SUMMARY
-          echo "  - \`base-latest.qcow2.zst\` (symlink)" >> $GITHUB_STEP_SUMMARY
+          echo "  - \`base-${BASE_VERSION}.qcow2\`" >> $GITHUB_STEP_SUMMARY
+          echo "  - \`base-latest.qcow2\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Use this base image for layered appliance builds." >> $GITHUB_STEP_SUMMARY

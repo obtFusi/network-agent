@@ -175,19 +175,14 @@ jobs:
           # Create input directory
           mkdir -p infrastructure/packer/input
 
-          # Download base image
-          BASE_FILE="base-${BASE_VERSION}.qcow2.zst"
+          # Download base image (no compression - saves only 0.3%)
+          BASE_FILE="base-${BASE_VERSION}.qcow2"
           echo "Downloading base image: $BASE_FILE"
           /tmp/mc cp minio/appliance-base/${BASE_FILE} infrastructure/packer/input/
 
-          # Decompress base image
-          echo "Decompressing base image..."
-          cd infrastructure/packer/input
-          zstd -d -v ${BASE_FILE}
-          rm -f ${BASE_FILE}
-
           # Rename to expected name
-          mv base-*.qcow2 base.qcow2
+          cd infrastructure/packer/input
+          mv ${BASE_FILE} base.qcow2
           ls -lh base.qcow2
           echo "BASE_IMAGE=input/base.qcow2" >> $GITHUB_ENV
 
