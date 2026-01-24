@@ -137,12 +137,136 @@ build {
   name    = "appliance"
   sources = ["source.qemu.appliance"]
 
+  # Step 0: Install telemetry helpers
+  provisioner "shell" {
+    inline = [
+      "# Create telemetry script with bottleneck analysis",
+      "cat > /usr/local/bin/telemetry.sh << 'TELEMETRY_EOF'",
+      "#!/bin/bash",
+      "# Telemetry helper for Packer build bottleneck analysis",
+      "TELEMETRY_DIR=/var/log/packer-telemetry",
+      "mkdir -p $TELEMETRY_DIR",
+      "",
+      "get_cpu_idle() {",
+      "  awk '/^cpu / {print $5}' /proc/stat",
+      "}",
+      "",
+      "get_disk_stats() {",
+      "  # Returns: reads writes read_bytes write_bytes",
+      "  awk '/vda|sda/ {print $4, $8, $6*512, $10*512; exit}' /proc/diskstats",
+      "}",
+      "",
+      "get_net_stats() {",
+      "  # Returns: rx_bytes tx_bytes",
+      "  awk '/eth0|ens/ {gsub(/:/, \"\"); print $2, $10; exit}' /proc/net/dev",
+      "}",
+      "",
+      "get_mem_stats() {",
+      "  # Returns: used_mb available_mb",
+      "  awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END {print int((total-avail)/1024), int(avail/1024)}' /proc/meminfo",
+      "}",
+      "",
+      "telemetry_start() {",
+      "  local STEP_NAME=\"$1\"",
+      "  local STEP_FILE=\"$TELEMETRY_DIR/step_${STEP_NAME//[^a-zA-Z0-9]/_}\"",
+      "  echo \"$(date +%s.%N)\" > \"${STEP_FILE}_start_time\"",
+      "  get_cpu_idle > \"${STEP_FILE}_start_cpu\"",
+      "  get_disk_stats > \"${STEP_FILE}_start_disk\"",
+      "  get_net_stats > \"${STEP_FILE}_start_net\"",
+      "  get_mem_stats > \"${STEP_FILE}_start_mem\"",
+      "  echo ''",
+      "  echo '═══════════════════════════════════════════════════════════════════════'",
+      "  echo \"⏱️  [${STEP_NAME}] START: $(date -Iseconds)\"",
+      "  echo '───────────────────────────────────────────────────────────────────────'",
+      "}",
+      "",
+      "telemetry_end() {",
+      "  local STEP_NAME=\"$1\"",
+      "  local STEP_FILE=\"$TELEMETRY_DIR/step_${STEP_NAME//[^a-zA-Z0-9]/_}\"",
+      "  local END_TIME=$(date +%s.%N)",
+      "  local START_TIME=$(cat \"${STEP_FILE}_start_time\")",
+      "  local DURATION=$(echo \"$END_TIME - $START_TIME\" | bc)",
+      "  ",
+      "  # CPU analysis",
+      "  local CPU_START=$(cat \"${STEP_FILE}_start_cpu\")",
+      "  local CPU_END=$(get_cpu_idle)",
+      "  local CPU_USED=$((100 - (CPU_END - CPU_START) / (DURATION > 0 ? DURATION : 1) ))",
+      "  ",
+      "  # Disk analysis",
+      "  read DISK_START_R DISK_START_W DISK_START_RB DISK_START_WB < \"${STEP_FILE}_start_disk\"",
+      "  read DISK_END_R DISK_END_W DISK_END_RB DISK_END_WB <<< $(get_disk_stats)",
+      "  local DISK_READS=$((DISK_END_R - DISK_START_R))",
+      "  local DISK_WRITES=$((DISK_END_W - DISK_START_W))",
+      "  local DISK_READ_MB=$(( (DISK_END_RB - DISK_START_RB) / 1048576 ))",
+      "  local DISK_WRITE_MB=$(( (DISK_END_WB - DISK_START_WB) / 1048576 ))",
+      "  ",
+      "  # Network analysis",
+      "  read NET_START_RX NET_START_TX < \"${STEP_FILE}_start_net\"",
+      "  read NET_END_RX NET_END_TX <<< $(get_net_stats)",
+      "  local NET_RX_MB=$(( (NET_END_RX - NET_START_RX) / 1048576 ))",
+      "  local NET_TX_MB=$(( (NET_END_TX - NET_START_TX) / 1048576 ))",
+      "  ",
+      "  # Memory analysis",
+      "  read MEM_START_USED MEM_START_AVAIL < \"${STEP_FILE}_start_mem\"",
+      "  read MEM_END_USED MEM_END_AVAIL <<< $(get_mem_stats)",
+      "  local MEM_DELTA=$((MEM_END_USED - MEM_START_USED))",
+      "  ",
+      "  # Calculate throughput",
+      "  local DISK_READ_RATE=$(echo \"scale=1; $DISK_READ_MB / $DURATION\" | bc 2>/dev/null || echo 0)",
+      "  local DISK_WRITE_RATE=$(echo \"scale=1; $DISK_WRITE_MB / $DURATION\" | bc 2>/dev/null || echo 0)",
+      "  local NET_RX_RATE=$(echo \"scale=1; $NET_RX_MB / $DURATION\" | bc 2>/dev/null || echo 0)",
+      "  local NET_TX_RATE=$(echo \"scale=1; $NET_TX_MB / $DURATION\" | bc 2>/dev/null || echo 0)",
+      "  ",
+      "  echo '───────────────────────────────────────────────────────────────────────'",
+      "  echo \"⏱️  [${STEP_NAME}] END: $(date -Iseconds)\"",
+      "  echo ''",
+      "  printf '  %-12s %s\\n' 'Duration:' \"${DURATION}s\"",
+      "  printf '  %-12s %s\\n' 'CPU:' \"~${CPU_USED}% avg\"",
+      "  printf '  %-12s %s\\n' 'Memory:' \"${MEM_END_USED}MB used (Δ${MEM_DELTA}MB)\"",
+      "  printf '  %-12s %s\\n' 'Disk Read:' \"${DISK_READ_MB}MB (${DISK_READ_RATE}MB/s, ${DISK_READS} IOPS)\"",
+      "  printf '  %-12s %s\\n' 'Disk Write:' \"${DISK_WRITE_MB}MB (${DISK_WRITE_RATE}MB/s, ${DISK_WRITES} IOPS)\"",
+      "  printf '  %-12s %s\\n' 'Net RX:' \"${NET_RX_MB}MB (${NET_RX_RATE}MB/s)\"",
+      "  printf '  %-12s %s\\n' 'Net TX:' \"${NET_TX_MB}MB (${NET_TX_RATE}MB/s)\"",
+      "  echo '═══════════════════════════════════════════════════════════════════════'",
+      "  echo ''",
+      "  ",
+      "  # Save to summary file",
+      "  echo \"${STEP_NAME}|${DURATION}|${CPU_USED}|${MEM_END_USED}|${DISK_READ_MB}|${DISK_WRITE_MB}|${NET_RX_MB}|${NET_TX_MB}\" >> $TELEMETRY_DIR/summary.csv",
+      "}",
+      "",
+      "telemetry_summary() {",
+      "  echo ''",
+      "  echo '╔═══════════════════════════════════════════════════════════════════════╗'",
+      "  echo '║                    BUILD TELEMETRY SUMMARY                            ║'",
+      "  echo '╠═══════════════════════════════════════════════════════════════════════╣'",
+      "  if [ -f $TELEMETRY_DIR/summary.csv ]; then",
+      "    local TOTAL=0",
+      "    while IFS='|' read -r name dur cpu mem dr dw nr nt; do",
+      "      printf '║ %-25s %6ss  CPU:%3s%%  Net:%4sMB  Disk:%4sMB ║\\n' \"$name\" \"$dur\" \"$cpu\" \"$nr\" \"$dw\"",
+      "      TOTAL=$(echo \"$TOTAL + $dur\" | bc)",
+      "    done < $TELEMETRY_DIR/summary.csv",
+      "    echo '╠═══════════════════════════════════════════════════════════════════════╣'",
+      "    printf '║ %-25s %6ss                                    ║\\n' 'TOTAL BUILD TIME:' \"$TOTAL\"",
+      "  fi",
+      "  echo '╚═══════════════════════════════════════════════════════════════════════╝'",
+      "}",
+      "",
+      "export -f telemetry_start telemetry_end telemetry_summary get_cpu_idle get_disk_stats get_net_stats get_mem_stats",
+      "TELEMETRY_EOF",
+      "chmod +x /usr/local/bin/telemetry.sh",
+      "echo 'Telemetry helpers installed'"
+    ]
+  }
+
   # Step 1: Base packages
   provisioner "shell" {
     inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step1_Base_packages'",
       "apt-get update",
-      "apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release sudo vim-tiny htop jq zstd qemu-guest-agent",
-      "systemctl enable qemu-guest-agent"
+      "apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release sudo vim-tiny htop jq zstd qemu-guest-agent bc",
+      "systemctl enable qemu-guest-agent",
+      "telemetry_end 'Step1_Base_packages'"
     ]
     environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
   }
@@ -150,12 +274,15 @@ build {
   # Step 2: Docker CE from docker.com
   provisioner "shell" {
     inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step2_Docker_CE'",
       "install -m 0755 -d /etc/apt/keyrings",
       "curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
       "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian trixie stable\" > /etc/apt/sources.list.d/docker.list",
       "apt-get update",
       "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-      "systemctl enable docker"
+      "systemctl enable docker",
+      "telemetry_end 'Step2_Docker_CE'"
     ]
     environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
   }
@@ -163,6 +290,8 @@ build {
   # Step 3: Hostname & Network (systemd-networkd replaces ifupdown)
   provisioner "shell" {
     inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step3_Network_Config'",
       "echo 'network-agent' > /etc/hostname",
       "cat > /etc/hosts << 'EOF'\n127.0.0.1   localhost\n127.0.1.1   network-agent\nEOF",
       "# Disable ifupdown (conflicts with systemd-networkd)",
@@ -172,29 +301,39 @@ build {
       "# Configure systemd-networkd for DHCP on all ethernet interfaces",
       "mkdir -p /etc/systemd/network",
       "cat > /etc/systemd/network/20-wired.network << 'EOF'\n[Match]\nType=ether\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nClientIdentifier=mac\nEOF",
-      "systemctl enable systemd-networkd"
+      "systemctl enable systemd-networkd",
+      "telemetry_end 'Step3_Network_Config'"
     ]
   }
 
   # Step 4: SSH Hardening
   provisioner "shell" {
     inline = [
-      "cat > /etc/ssh/sshd_config.d/99-hardening.conf << 'EOF'\nPermitRootLogin prohibit-password\nPasswordAuthentication no\nPubkeyAuthentication yes\nAuthenticationMethods publickey\nX11Forwarding no\nAllowTcpForwarding no\nMaxAuthTries 3\nEOF"
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step4_SSH_Hardening'",
+      "cat > /etc/ssh/sshd_config.d/99-hardening.conf << 'EOF'\nPermitRootLogin prohibit-password\nPasswordAuthentication no\nPubkeyAuthentication yes\nAuthenticationMethods publickey\nX11Forwarding no\nAllowTcpForwarding no\nMaxAuthTries 3\nEOF",
+      "telemetry_end 'Step4_SSH_Hardening'"
     ]
   }
 
   # Step 5: Kernel Tuning
   provisioner "shell" {
     inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step5_Kernel_Tuning'",
       "cat > /etc/sysctl.d/99-network-agent.conf << 'EOF'\nnet.ipv4.ping_group_range = 0 65535\nfs.file-max = 1000000\nnet.core.somaxconn = 65535\nnet.ipv4.tcp_tw_reuse = 1\nnet.ipv4.tcp_fin_timeout = 15\nnet.core.rmem_max = 16777216\nnet.core.wmem_max = 16777216\nnet.ipv4.neigh.default.gc_thresh3 = 16384\nEOF",
-      "sysctl --system"
+      "sysctl --system",
+      "telemetry_end 'Step5_Kernel_Tuning'"
     ]
   }
 
   # Step 6: User Limits
   provisioner "shell" {
     inline = [
-      "cat > /etc/security/limits.d/99-network-agent.conf << 'EOF'\n* soft nofile 1000000\n* hard nofile 1000000\nEOF"
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step6_User_Limits'",
+      "cat > /etc/security/limits.d/99-network-agent.conf << 'EOF'\n* soft nofile 1000000\n* hard nofile 1000000\nEOF",
+      "telemetry_end 'Step6_User_Limits'"
     ]
   }
 
@@ -202,26 +341,38 @@ build {
   # Uses Packer's built-in HTTP server - much faster than SCP file provisioner
   provisioner "shell" {
     inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step7a_Download_Models'",
       "echo '=== Downloading Ollama models via HTTP ==='",
       "cd /var/tmp",
       "wget -q --show-progress http://{{ .HTTPIP }}:{{ .HTTPPort }}/ollama-models.tar.zst -O ollama-models.tar.zst",
-      "ls -lh ollama-models.tar.zst"
+      "ls -lh ollama-models.tar.zst",
+      "telemetry_end 'Step7a_Download_Models'"
     ]
   }
 
   # Step 7b: Extract Ollama models
   provisioner "shell" {
     inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step7b_Extract_Models'",
       "echo '=== Extracting Ollama models ==='",
       "mkdir -p /tmp/ollama-cache",
       "zstd -d /var/tmp/ollama-models.tar.zst -o /var/tmp/ollama-models.tar",
       "tar -xf /var/tmp/ollama-models.tar -C /tmp/ollama-cache",
       "rm /var/tmp/ollama-models.tar /var/tmp/ollama-models.tar.zst",
-      "ls -lh /tmp/ollama-cache/"
+      "ls -lh /tmp/ollama-cache/",
+      "telemetry_end 'Step7b_Extract_Models'"
     ]
   }
 
   # Step 7c: Ollama + Models (uses cache if available)
+  provisioner "shell" {
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step7c_Ollama_Install'"
+    ]
+  }
   provisioner "shell" {
     scripts = [
       "scripts/03-pull-ollama-model.sh"
@@ -232,6 +383,12 @@ build {
     ]
     execute_command = "chmod +x {{ .Path }}; {{ .Vars }} {{ .Path }}"
   }
+  provisioner "shell" {
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_end 'Step7c_Ollama_Install'"
+    ]
+  }
 
   # ═══════════════════════════════════════════════════════════════════════════
   # NETWORK AGENT LAYER (everything needed for one-click appliance)
@@ -239,40 +396,81 @@ build {
 
   # Step 8: Create target directory
   provisioner "shell" {
-    inline = ["mkdir -p /opt/network-agent"]
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step8_Create_Dir'",
+      "mkdir -p /opt/network-agent",
+      "telemetry_end 'Step8_Create_Dir'"
+    ]
   }
 
   # Step 9: Copy Docker Compose files and configs
+  provisioner "shell" {
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step9_Copy_Compose'"
+    ]
+  }
   provisioner "file" {
     source      = "../docker/"
     destination = "/opt/network-agent/"
   }
+  provisioner "shell" {
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_end 'Step9_Copy_Compose'"
+    ]
+  }
 
   # Step 10: Copy first-boot script
+  provisioner "shell" {
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step10_Copy_FirstBoot'"
+    ]
+  }
   provisioner "file" {
     source      = "../scripts/first-boot.sh"
     destination = "/opt/network-agent/first-boot.sh"
+  }
+  provisioner "shell" {
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_end 'Step10_Copy_FirstBoot'"
+    ]
   }
 
   # Step 11: Write version file
   provisioner "shell" {
     inline = [
-      "echo '${var.version}' > /opt/network-agent/VERSION"
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step11_Write_Version'",
+      "echo '${var.version}' > /opt/network-agent/VERSION",
+      "telemetry_end 'Step11_Write_Version'"
     ]
   }
 
   # Step 12: Pull Docker images from ghcr.io for offline use
   provisioner "shell" {
     inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step12_Docker_Pull'",
       "# Start Docker (may not be running yet)",
       "systemctl start docker",
       "sleep 5",
       "# Pull images",
-      "cd /opt/network-agent && VERSION=${var.version} docker compose pull"
+      "cd /opt/network-agent && VERSION=${var.version} docker compose pull",
+      "telemetry_end 'Step12_Docker_Pull'"
     ]
   }
 
   # Step 13: First-boot setup + Firewall configuration
+  provisioner "shell" {
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step13_FirstBoot_Firewall'"
+    ]
+  }
   provisioner "shell" {
     scripts = [
       "scripts/05-first-boot-setup.sh",
@@ -284,12 +482,20 @@ build {
     ]
     execute_command = "chmod +x {{ .Path }}; {{ .Vars }} {{ .Path }}"
   }
+  provisioner "shell" {
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_end 'Step13_FirstBoot_Firewall'"
+    ]
+  }
 
   # Step 14: Final cleanup + Shutdown
   provisioner "shell" {
     skip_clean        = true
     expect_disconnect = true
     inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "telemetry_start 'Step14_Cleanup_Shutdown'",
       "# Stop Docker cleanly",
       "systemctl stop docker",
       "# APT Offline (no updates needed in appliance)",
@@ -299,11 +505,14 @@ build {
       "apt-get clean && rm -rf /var/lib/apt/lists/*",
       "# Final cleanup",
       "journalctl --vacuum-time=1s",
-      "rm -rf /tmp/* /var/tmp/*",
       "# Reset machine identity (unique per deployment)",
       "rm -f /etc/ssh/ssh_host_*",
       "truncate -s 0 /etc/machine-id",
-      "# Zero free space for better compression",
+      "telemetry_end 'Step14_Cleanup_Shutdown'",
+      "# Print telemetry summary before shutdown",
+      "telemetry_summary",
+      "# Zero free space for better compression (after telemetry)",
+      "rm -rf /tmp/* /var/tmp/*",
       "dd if=/dev/zero of=/EMPTY bs=1M count=2048 2>/dev/null || true",
       "rm -f /EMPTY",
       "sync",
