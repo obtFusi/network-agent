@@ -194,9 +194,10 @@ build {
   }
 
   # Step 7a: Copy cached Ollama models from host (FAST: ~2min instead of 25min)
+  # NOTE: Use /var/tmp (disk-backed) not /tmp (tmpfs, limited to ~8GB)
   provisioner "file" {
     source      = "/tmp/ollama-models.tar.zst"
-    destination = "/tmp/ollama-models.tar.zst"
+    destination = "/var/tmp/ollama-models.tar.zst"
   }
 
   # Step 7b: Extract and setup Ollama models
@@ -204,9 +205,9 @@ build {
     inline = [
       "echo '=== Extracting cached Ollama models ==='",
       "mkdir -p /tmp/ollama-cache",
-      "zstd -d /tmp/ollama-models.tar.zst -o /tmp/ollama-models.tar",
-      "tar -xf /tmp/ollama-models.tar -C /tmp/ollama-cache",
-      "rm /tmp/ollama-models.tar /tmp/ollama-models.tar.zst",
+      "zstd -d /var/tmp/ollama-models.tar.zst -o /var/tmp/ollama-models.tar",
+      "tar -xf /var/tmp/ollama-models.tar -C /tmp/ollama-cache",
+      "rm /var/tmp/ollama-models.tar /var/tmp/ollama-models.tar.zst",
       "ls -lh /tmp/ollama-cache/"
     ]
   }
