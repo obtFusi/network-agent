@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build Telemetry Live</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/lucide-static@latest/font/lucide.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-card: #252542;
+            --accent: #00d4ff;
+            --accent-glow: rgba(0, 212, 255, 0.3);
+            --success: #00ff88;
+            --warning: #ffaa00;
+            --danger: #ff4466;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --border: #3a3a5a;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            background-image:
+                radial-gradient(ellipse at top, rgba(0, 212, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom right, rgba(255, 68, 102, 0.05) 0%, transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), #ff6b9d);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        .header .subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* Live indicator */
+        .live-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid var(--success);
+            border-radius: 20px;
+            padding: 6px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--success);
+            margin-bottom: 16px;
+        }
+        .live-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .live-badge.stopped { border-color: var(--danger); color: var(--danger); background: rgba(255, 68, 102, 0.1); }
+        .live-badge.stopped::before { background: var(--danger); animation: none; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+        .input-group {
+            display: flex;
+            align-items: center;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 4px;
+        }
+        .input-group input {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            padding: 10px 14px;
+            font-size: 14px;
+            outline: none;
+            width: 200px;
+        }
+        .input-group input::placeholder { color: var(--text-secondary); }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #0099cc);
+            color: var(--bg-primary);
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px var(--accent-glow); }
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { border-color: var(--accent); }
+
+        /* Cards Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .grid-full { grid-column: 1 / -1; }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid var(--border);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--accent), #0099cc);
+            border-radius: 10px;
+            font-size: 20px;
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        /* Metrics */
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .metric-row:last-child { border-bottom: none; }
+        .metric-label { color: var(--text-secondary); font-size: 14px; }
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+        .metric-value.success { color: var(--success); }
+        .metric-value.warning { color: var(--warning); }
+        .metric-value.danger { color: var(--danger); }
+
+        /* Progress Steps */
+        .steps-list { display: flex; flex-direction: column; gap: 8px; }
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            transition: background 0.2s;
+        }
+        .step-item:hover { background: rgba(0, 212, 255, 0.1); }
+        .step-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .step-icon.completed { background: var(--success); color: var(--bg-primary); }
+        .step-icon.running { background: var(--warning); color: var(--bg-primary); animation: pulse 1s infinite; }
+        .step-icon.pending { background: var(--border); color: var(--text-secondary); }
+        .step-icon.failed { background: var(--danger); color: var(--text-primary); }
+        .step-icon.skipped { background: var(--text-secondary); color: var(--bg-primary); opacity: 0.6; }
+        .step-item.active { background: rgba(255, 193, 7, 0.15); border-radius: 8px; margin: 2px -8px; padding: 10px 16px; }
+        .step-name { flex: 1; font-size: 14px; }
+        .step-duration { color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+        /* Chart Container */
+        .chart-container { position: relative; height: 280px; }
+
+        /* Table */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .data-table th, .data-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .data-table th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+        .data-table tr:hover { background: rgba(0, 212, 255, 0.05); }
+        .data-table .highlight { color: var(--accent); font-weight: 600; }
+
+        /* Status classes */
+        .metric-value.highlight { color: var(--accent); }
+        .metric-value.in_progress { color: var(--warning); }
+        .metric-value.completed { color: var(--success); }
+        .metric-value.success { color: var(--success); }
+        .metric-value.failure { color: var(--danger); }
+        .metric-value.queued { color: var(--text-secondary); }
+
+        /* Bottleneck Alert */
+        .alert {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+        .alert-danger { background: rgba(255, 68, 102, 0.1); border: 1px solid var(--danger); }
+        .alert-warning { background: rgba(255, 170, 0, 0.1); border: 1px solid var(--warning); }
+        .alert-icon { font-size: 20px; }
+        .alert-danger .alert-icon { color: var(--danger); }
+        .alert-warning .alert-icon { color: var(--warning); }
+        .alert-title { font-weight: 600; margin-bottom: 4px; }
+        .alert-text { color: var(--text-secondary); font-size: 13px; }
+
+        /* JSON Input */
+        #json-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        #json-modal.active { display: flex; }
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            width: 90%;
+            max-width: 600px;
+        }
+        .modal-content textarea {
+            width: 100%;
+            height: 300px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            resize: vertical;
+            margin-bottom: 16px;
+        }
+
+        /* Hidden by default */
+        #dashboard { display: none; }
+        #dashboard.active { display: block; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Build Telemetry Dashboard</h1>
+        <p class="subtitle">Real-time monitoring for CI/CD pipeline</p>
+    </div>
+
+    <div style="text-align: center;">
+        <span id="live-badge" class="live-badge stopped">READY</span>
+    </div>
+
+    <div class="controls">
+        <div class="input-group">
+            <input type="text" id="run-id" placeholder="Run ID (e.g., 21317080479)">
+        </div>
+        <div class="input-group">
+            <input type="password" id="gh-token" placeholder="GitHub Token (optional, for higher rate limits)" style="width: 300px;">
+        </div>
+        <button class="btn btn-primary" onclick="startPolling()">
+            <span>▶</span> Start Live
+        </button>
+        <button class="btn btn-secondary" onclick="stopPolling()">
+            <span>⏹</span> Stop
+        </button>
+        <button class="btn btn-secondary" onclick="showJsonModal()">
+            <span>📋</span> Paste JSON
+        </button>
+        <button class="btn btn-secondary" onclick="loadSample()">
+            <span>📊</span> Sample Data
+        </button>
+    </div>
+
+    <div id="json-modal">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 16px;">Paste Telemetry JSON</h3>
+            <textarea id="json-input" placeholder='{"job": "build", "version": "0.10.2", ...}'></textarea>
+            <div style="display: flex; gap: 12px;">
+                <button class="btn btn-primary" onclick="parseJson()">Parse & Display</button>
+                <button class="btn btn-secondary" onclick="hideJsonModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="dashboard">
+        <div class="grid">
+            <!-- Job Overview -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">📦</div>
+                    <div class="card-title">Job Overview</div>
+                </div>
+                <div id="job-overview"></div>
+            </div>
+
+            <!-- Current Activity -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">⚡</div>
+                    <div class="card-title">Current Activity</div>
+                </div>
+                <div id="system-info"></div>
+            </div>
+
+            <!-- Build Steps -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">📋</div>
+                    <div class="card-title">Build Progress</div>
+                </div>
+                <div id="steps-list" class="steps-list"></div>
+            </div>
+
+            <!-- Bottleneck Analysis -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">⚠️</div>
+                    <div class="card-title">Bottleneck Analysis</div>
+                </div>
+                <div id="bottleneck-analysis"></div>
+            </div>
+
+            <!-- Duration Chart -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">⏱️</div>
+                    <div class="card-title">Step Durations</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="duration-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- I/O Chart -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">💾</div>
+                    <div class="card-title">Disk I/O Analysis</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="io-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Detailed Table -->
+            <div class="card grid-full">
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <div class="card-title">Step Details</div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="data-table" id="steps-table">
+                        <thead>
+                            <tr>
+                                <th>Step</th>
+                                <th>Duration</th>
+                                <th>CPU</th>
+                                <th>Memory</th>
+                                <th>Disk Read</th>
+                                <th>Disk Write</th>
+                                <th>Util %</th>
+                                <th>Await</th>
+                                <th>Queue</th>
+                                <th>Net RX</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pollingInterval = null;
+        let durationChart, ioChart;
+
+        function showJsonModal() { document.getElementById('json-modal').classList.add('active'); }
+        function hideJsonModal() { document.getElementById('json-modal').classList.remove('active'); }
+
+        function parseJson() {
+            try {
+                const data = JSON.parse(document.getElementById('json-input').value);
+                renderDashboard(data);
+                hideJsonModal();
+            } catch (e) {
+                alert('Invalid JSON: ' + e.message);
+            }
+        }
+
+        function updateLiveBadge(status) {
+            const badge = document.getElementById('live-badge');
+            badge.className = 'live-badge';
+            if (status === 'live') {
+                badge.textContent = 'LIVE';
+            } else if (status === 'stopped') {
+                badge.classList.add('stopped');
+                badge.textContent = 'STOPPED';
+            } else {
+                badge.classList.add('stopped');
+                badge.textContent = status.toUpperCase();
+            }
+        }
+
+        const REPO = 'obtFusi/network-agent';
+        let currentRunId = null;
+
+        function getAuthHeaders() {
+            const token = document.getElementById('gh-token')?.value;
+            return token ? { 'Authorization': `token ${token}` } : {};
+        }
+
+        async function ghFetch(url) {
+            const resp = await fetch(url, { headers: getAuthHeaders() });
+            // Check rate limit in headers
+            const remaining = resp.headers.get('X-RateLimit-Remaining');
+            if (remaining) {
+                console.log(`API Rate: ${remaining} requests remaining`);
+            }
+            return resp;
+        }
+
+        // Auto-fetch latest run on page load
+        async function fetchLatestRun() {
+            try {
+                updateLiveBadge('LOADING');
+                // Get workflow runs, prefer in_progress, then latest
+                const runsUrl = `https://api.github.com/repos/${REPO}/actions/runs?per_page=5`;
+                const resp = await ghFetch(runsUrl);
+                if (!resp.ok) {
+                    if (resp.status === 403) {
+                        updateLiveBadge('RATE LIMIT');
+                        console.warn('Rate limited. Add GitHub token for 5000 req/hour.');
+                    } else {
+                        updateLiveBadge('ERROR');
+                    }
+                    return null;
+                }
+                const data = await resp.json();
+
+                // Find an in_progress run first, otherwise take the latest
+                const inProgress = data.workflow_runs.find(r => r.status === 'in_progress');
+                const latest = inProgress || data.workflow_runs[0];
+
+                if (latest) {
+                    currentRunId = latest.id;
+                    document.getElementById('run-id').value = currentRunId;
+                    return currentRunId;
+                }
+                return null;
+            } catch (e) {
+                console.error('Failed to fetch runs:', e);
+                updateLiveBadge('ERROR');
+                return null;
+            }
+        }
+
+        async function fetchRunData() {
+            const runId = currentRunId || document.getElementById('run-id').value;
+            if (!runId) return null;
+
+            try {
+                // Fetch workflow run data from GitHub API (CORS enabled for public repos)
+                const runUrl = `https://api.github.com/repos/${REPO}/actions/runs/${runId}`;
+                const runResp = await ghFetch(runUrl);
+                if (!runResp.ok) {
+                    if (runResp.status === 403) {
+                        console.warn('Rate limit hit, waiting...');
+                        updateLiveBadge('RATE LIMIT');
+                        // Don't stop, just return null and try again next interval
+                        return null;
+                    }
+                    console.error('Run fetch failed:', runResp.status);
+                    updateLiveBadge('ERROR ' + runResp.status);
+                    return null;
+                }
+                const runData = await runResp.json();
+                // Restore LIVE badge on successful fetch
+                updateLiveBadge('live');
+
+                // Fetch jobs for this run
+                const jobsUrl = `https://api.github.com/repos/${REPO}/actions/runs/${runId}/jobs`;
+                const jobsResp = await ghFetch(jobsUrl);
+                const jobsData = jobsResp.ok ? await jobsResp.json() : { jobs: [] };
+
+                // Find the build job
+                const buildJob = jobsData.jobs.find(j => j.name === 'Build Appliance') || jobsData.jobs[0];
+
+                // Try to fetch logs (may fail due to CORS or auth)
+                let telemetrySteps = [];
+                if (buildJob && buildJob.id) {
+                    try {
+                        const logsUrl = `https://api.github.com/repos/${REPO}/actions/jobs/${buildJob.id}/logs`;
+                        const logsResp = await fetch(logsUrl);
+                        if (logsResp.ok) {
+                            const logsText = await logsResp.text();
+                            telemetrySteps = parseTelemetryFromLogs(logsText);
+                        }
+                    } catch (e) {
+                        console.log('Logs not available (needs auth)');
+                    }
+                }
+
+                // Build dashboard data structure
+                const data = {
+                    job: buildJob?.name || 'Build Appliance',
+                    version: runData.head_branch || 'main',
+                    status: runData.status,
+                    conclusion: runData.conclusion,
+                    started_at: runData.run_started_at,
+                    completed_at: runData.updated_at,
+                    steps: buildJob?.steps?.map(s => ({
+                        name: s.name,
+                        status: s.status,
+                        conclusion: s.conclusion,
+                        started_at: s.started_at,
+                        completed_at: s.completed_at,
+                        duration_s: s.started_at && s.completed_at ?
+                            (new Date(s.completed_at) - new Date(s.started_at)) / 1000 : 0
+                    })) || [],
+                    telemetry: telemetrySteps,
+                    system: {
+                        cpu_percent: 0,
+                        memory_mb: 0,
+                        disk_read_mb: 0,
+                        disk_write_mb: 0
+                    }
+                };
+
+                return data;
+            } catch (e) {
+                console.error('Fetch error:', e);
+                updateLiveBadge('ERROR');
+                return null;
+            }
+        }
+
+        function parseTelemetryFromLogs(logs) {
+            const steps = [];
+            const lines = logs.split('\n');
+            let currentStep = null;
+
+            for (const line of lines) {
+                // Match telemetry END markers
+                const endMatch = line.match(/\[([^\]]+)\] END:/);
+                if (endMatch) {
+                    if (currentStep) {
+                        steps.push(currentStep);
+                    }
+                    currentStep = { name: endMatch[1] };
+                }
+                if (currentStep) {
+                    const durMatch = line.match(/Duration:\s*([\d.]+)s/);
+                    if (durMatch) currentStep.duration_s = parseFloat(durMatch[1]);
+
+                    const cpuMatch = line.match(/CPU:\s*~?([\d.]+)%/);
+                    if (cpuMatch) currentStep.cpu_percent = parseFloat(cpuMatch[1]);
+
+                    const memMatch = line.match(/Memory:\s*(\d+)MB/);
+                    if (memMatch) currentStep.memory_mb = parseInt(memMatch[1]);
+
+                    const diskReadMatch = line.match(/Disk Read:\s*(\d+)MB/);
+                    if (diskReadMatch) currentStep.disk_read_mb = parseInt(diskReadMatch[1]);
+
+                    const diskWriteMatch = line.match(/Disk Write:\s*(\d+)MB/);
+                    if (diskWriteMatch) currentStep.disk_write_mb = parseInt(diskWriteMatch[1]);
+
+                    const ioMatch = line.match(/util=(\d+)%.*await=(\d+)ms.*queue=([\d.]+)/);
+                    if (ioMatch) {
+                        currentStep.disk_util_percent = parseInt(ioMatch[1]);
+                        currentStep.await_ms = parseInt(ioMatch[2]);
+                        currentStep.queue_depth = parseFloat(ioMatch[3]);
+                    }
+                }
+            }
+            if (currentStep && currentStep.name) {
+                steps.push(currentStep);
+            }
+            return steps;
+        }
+
+        function startPolling() {
+            const runId = currentRunId || document.getElementById('run-id').value;
+            if (!runId) {
+                alert('No run to monitor');
+                return;
+            }
+            currentRunId = runId;
+            updateLiveBadge('live');
+
+            // Initial fetch
+            pollOnce();
+
+            // Then poll every 5 seconds
+            // Poll every 30s to avoid GitHub API rate limits (60/hour unauthenticated)
+            pollingInterval = setInterval(pollOnce, 30000);
+        }
+
+        async function pollOnce() {
+            const data = await fetchRunData();
+            if (data) {
+                renderDashboard(data);
+
+                // Stop polling if completed
+                if (data.status === 'completed') {
+                    stopPolling();
+                    updateLiveBadge('DONE');
+                }
+            }
+        }
+
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+            updateLiveBadge('stopped');
+        }
+
+        function formatDuration(s) {
+            if (s < 60) return s.toFixed(1) + 's';
+            if (s < 3600) return Math.floor(s/60) + 'm ' + Math.floor(s%60) + 's';
+            return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+        }
+
+        function formatMB(mb) {
+            return mb >= 1024 ? (mb/1024).toFixed(1) + ' GB' : mb + ' MB';
+        }
+
+        function getValueClass(val, warn, danger) {
+            if (val >= danger) return 'danger';
+            if (val >= warn) return 'warning';
+            return '';
+        }
+
+        function renderDashboard(data) {
+            document.getElementById('dashboard').classList.add('active');
+
+            // Calculate total elapsed time
+            const startTime = data.started_at ? new Date(data.started_at) : null;
+            const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+
+            // Find current running step
+            const runningStep = data.steps?.find(s => s.status === 'in_progress');
+            const completedSteps = data.steps?.filter(s => s.status === 'completed').length || 0;
+            const totalSteps = data.steps?.length || 0;
+
+            // Job Overview
+            document.getElementById('job-overview').innerHTML = `
+                <div class="metric-row"><span class="metric-label">Job</span><span class="metric-value">${data.job}</span></div>
+                <div class="metric-row"><span class="metric-label">Branch</span><span class="metric-value highlight">${data.version}</span></div>
+                <div class="metric-row"><span class="metric-label">Status</span><span class="metric-value ${data.status}">${data.status}</span></div>
+                <div class="metric-row"><span class="metric-label">Elapsed</span><span class="metric-value">${formatDuration(elapsed)}</span></div>
+                <div class="metric-row"><span class="metric-label">Progress</span><span class="metric-value">${completedSteps}/${totalSteps} steps</span></div>
+            `;
+
+            // System Info - show current step details
+            const sysInfo = document.getElementById('system-info');
+            if (runningStep) {
+                const stepStart = runningStep.started_at ? new Date(runningStep.started_at) : null;
+                const stepElapsed = stepStart ? Math.floor((Date.now() - stepStart) / 1000) : 0;
+                sysInfo.innerHTML = `
+                    <div class="metric-row" style="margin-bottom: 12px;">
+                        <span class="metric-label">Current Step</span>
+                        <span class="metric-value highlight">${runningStep.name}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">Running for</span>
+                        <span class="metric-value">${formatDuration(stepElapsed)}</span>
+                    </div>
+                    <div style="margin-top: 16px; padding: 12px; background: rgba(255,193,7,0.1); border-radius: 8px; font-size: 12px; color: var(--text-secondary);">
+                        <strong>💡 Tip:</strong> For detailed resource metrics (CPU, Memory, Disk I/O), check the telemetry output after build completion or use the CLI:
+                        <code style="display: block; margin-top: 8px; padding: 6px; background: var(--bg-primary); border-radius: 4px;">./scripts/live-telemetry.sh ${currentRunId}</code>
+                    </div>
+                `;
+            } else if (data.status === 'completed') {
+                sysInfo.innerHTML = `
+                    <div class="metric-row"><span class="metric-label">Result</span><span class="metric-value ${data.conclusion}">${data.conclusion || 'unknown'}</span></div>
+                    <div class="metric-row"><span class="metric-label">Duration</span><span class="metric-value">${formatDuration(elapsed)}</span></div>
+                `;
+            } else {
+                sysInfo.innerHTML = `
+                    <div style="color: var(--text-secondary); padding: 20px; text-align: center;">Waiting for step to start...</div>
+                `;
+            }
+
+            if (data.steps?.length) {
+                renderStepsList(data.steps);
+                // Only render table/charts if we have telemetry data
+                if (data.telemetry?.length) {
+                    renderStepsTable(data.telemetry);
+                    renderCharts(data.telemetry);
+                    renderBottlenecks(data.telemetry);
+                }
+            }
+        }
+
+        function renderStepsList(steps) {
+            const html = steps.map(s => {
+                let icon, iconClass;
+                if (s.status === 'in_progress') {
+                    icon = '●';
+                    iconClass = 'running';
+                } else if (s.status === 'completed') {
+                    if (s.conclusion === 'success') {
+                        icon = '✓';
+                        iconClass = 'completed';
+                    } else if (s.conclusion === 'skipped') {
+                        icon = '⊘';
+                        iconClass = 'skipped';
+                    } else {
+                        icon = '✗';
+                        iconClass = 'failed';
+                    }
+                } else {
+                    icon = '○';
+                    iconClass = 'pending';
+                }
+                return `
+                    <div class="step-item ${s.status === 'in_progress' ? 'active' : ''}">
+                        <div class="step-icon ${iconClass}">${icon}</div>
+                        <span class="step-name">${s.name.replace(/Step\d+_/, '')}</span>
+                        <span class="step-duration">${formatDuration(s.duration_s || 0)}</span>
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('steps-list').innerHTML = html;
+        }
+
+        function renderStepsTable(steps) {
+            const tbody = document.querySelector('#steps-table tbody');
+            tbody.innerHTML = steps.map(s => `
+                <tr>
+                    <td>${s.name}</td>
+                    <td class="${getValueClass(s.duration_s, 60, 300)}">${formatDuration(s.duration_s)}</td>
+                    <td class="${getValueClass(s.cpu_percent, 80, 95)}">${s.cpu_percent}%</td>
+                    <td>${formatMB(s.memory_used_mb)}</td>
+                    <td>${formatMB(s.disk_read_mb)} <small>(${s.disk_read_rate_mbs || 0} MB/s)</small></td>
+                    <td>${formatMB(s.disk_write_mb)} <small>(${s.disk_write_rate_mbs || 0} MB/s)</small></td>
+                    <td class="${getValueClass(s.disk_util_percent || 0, 80, 95)}">${s.disk_util_percent || 0}%</td>
+                    <td class="${getValueClass(s.await_ms || 0, 10, 50)}">${s.await_ms || 0}ms</td>
+                    <td class="${getValueClass(s.queue_depth || 0, 4, 10)}">${(s.queue_depth || 0).toFixed(1)}</td>
+                    <td>${formatMB(s.net_rx_mb)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderCharts(steps) {
+            const labels = steps.map(s => s.name.replace(/Step\d+_/, '').substring(0, 15));
+
+            // Duration Chart
+            const ctxD = document.getElementById('duration-chart').getContext('2d');
+            if (durationChart) durationChart.destroy();
+            durationChart = new Chart(ctxD, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Duration (s)',
+                        data: steps.map(s => s.duration_s),
+                        backgroundColor: steps.map(s => s.duration_s > 300 ? '#ff4466' : s.duration_s > 60 ? '#ffaa00' : '#00d4ff'),
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: '#3a3a5a' }, ticks: { color: '#a0a0b0' } },
+                        y: { grid: { display: false }, ticks: { color: '#a0a0b0', font: { size: 10 } } }
+                    }
+                }
+            });
+
+            // I/O Chart
+            const ctxI = document.getElementById('io-chart').getContext('2d');
+            if (ioChart) ioChart.destroy();
+            ioChart = new Chart(ctxI, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Util %', data: steps.map(s => s.disk_util_percent || 0), backgroundColor: '#00d4ff', borderRadius: 4 },
+                        { label: 'Await (ms)', data: steps.map(s => Math.min(s.await_ms || 0, 100)), backgroundColor: '#ffaa00', borderRadius: 4 },
+                        { label: 'Queue x10', data: steps.map(s => (s.queue_depth || 0) * 10), backgroundColor: '#ff4466', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#a0a0b0' } } },
+                    scales: {
+                        x: { grid: { color: '#3a3a5a' }, ticks: { color: '#a0a0b0' } },
+                        y: { grid: { display: false }, ticks: { color: '#a0a0b0', font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        function renderBottlenecks(steps) {
+            const alerts = [];
+
+            const slowest = steps.reduce((a, b) => a.duration_s > b.duration_s ? a : b);
+            if (slowest.duration_s > 120) {
+                alerts.push({ type: 'warning', title: 'Slowest Step', text: `${slowest.name}: ${formatDuration(slowest.duration_s)}` });
+            }
+
+            steps.forEach(s => {
+                if (s.disk_util_percent >= 90) {
+                    alerts.push({ type: 'danger', title: 'Disk Saturated', text: `${s.name}: ${s.disk_util_percent}% utilization` });
+                }
+                if (s.await_ms >= 100) {
+                    alerts.push({ type: 'danger', title: 'High I/O Latency', text: `${s.name}: ${s.await_ms}ms await time` });
+                }
+                if (s.queue_depth >= 8) {
+                    alerts.push({ type: 'warning', title: 'I/O Congestion', text: `${s.name}: queue depth ${s.queue_depth.toFixed(1)}` });
+                }
+            });
+
+            const container = document.getElementById('bottleneck-analysis');
+            if (alerts.length === 0) {
+                container.innerHTML = '<div style="color: var(--success); padding: 20px; text-align: center;">✓ No significant bottlenecks detected</div>';
+            } else {
+                container.innerHTML = alerts.map(a => `
+                    <div class="alert alert-${a.type}">
+                        <span class="alert-icon">${a.type === 'danger' ? '🔴' : '🟡'}</span>
+                        <div>
+                            <div class="alert-title">${a.title}</div>
+                            <div class="alert-text">${a.text}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function loadSample() {
+            const sample = {
+                job: "build", version: "0.10.2-test", timestamp: "2026-01-24T14:00:00+00:00",
+                runner: "github-runner", git_sha: "abc123def456", job_duration_s: 2100,
+                steps: [
+                    { name: "Step1_Base_packages", duration_s: 45, cpu_percent: 30, memory_used_mb: 1200, disk_read_mb: 50, disk_write_mb: 200, disk_read_rate_mbs: 10, disk_write_rate_mbs: 40, disk_util_percent: 25, await_ms: 2, queue_depth: 0.5, net_rx_mb: 150, net_tx_mb: 5 },
+                    { name: "Step2_Docker_CE", duration_s: 120, cpu_percent: 45, memory_used_mb: 2400, disk_read_mb: 100, disk_write_mb: 800, disk_read_rate_mbs: 8, disk_write_rate_mbs: 60, disk_util_percent: 45, await_ms: 3, queue_depth: 1.2, net_rx_mb: 350, net_tx_mb: 10 },
+                    { name: "Step7a_Transfer_Models", duration_s: 567, cpu_percent: 5, memory_used_mb: 550, disk_read_mb: 0, disk_write_mb: 13000, disk_read_rate_mbs: 0, disk_write_rate_mbs: 22, disk_util_percent: 95, await_ms: 2003, queue_depth: 45, net_rx_mb: 0, net_tx_mb: 0 },
+                    { name: "Step7b_Extract_Models", duration_s: 180, cpu_percent: 60, memory_used_mb: 3500, disk_read_mb: 15000, disk_write_mb: 18000, disk_read_rate_mbs: 80, disk_write_rate_mbs: 100, disk_util_percent: 100, await_ms: 15, queue_depth: 8, net_rx_mb: 0, net_tx_mb: 0 },
+                    { name: "Step12_Docker_Pull", duration_s: 90, cpu_percent: 25, memory_used_mb: 1800, disk_read_mb: 50, disk_write_mb: 500, disk_read_rate_mbs: 5, disk_write_rate_mbs: 50, disk_util_percent: 35, await_ms: 4, queue_depth: 1.5, net_rx_mb: 800, net_tx_mb: 20 }
+                ],
+                system: { cpus: 4, memory_total_mb: 32000, disk_total_gb: 120 }
+            };
+            renderDashboard(sample);
+        }
+
+        // Auto-start on page load
+        async function autoStart() {
+            const runId = await fetchLatestRun();
+            if (runId) {
+                startPolling();
+            } else {
+                updateLiveBadge('NO RUNS');
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', autoStart);
+    </script>
+</body>
+</html>
