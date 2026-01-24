@@ -137,12 +137,16 @@ jobs:
             # DELETE models to save disk space (tarball is the cache)
             echo "🧹 Cleaning up models dir to save space..."
             rm -rf "$TEMP_MODELS"
-            sudo rm -rf /usr/share/ollama  # Ollama default location (40GB!)
+            # Clean Ollama default location but recreate with correct permissions
+            sudo rm -rf /usr/share/ollama/.ollama
+            sudo mkdir -p /usr/share/ollama/.ollama
+            sudo chown -R ollama:ollama /usr/share/ollama
             df -h /
           fi
 
-          # Symlink for packer
-          ln -sf "$ARCHIVE_PATH" /tmp/ollama-models.tar.zst
+          # Symlink for Packer HTTP server (FAST: ~500MB/s vs SCP ~100MB/s)
+          mkdir -p infrastructure/packer/http
+          ln -sf "$ARCHIVE_PATH" infrastructure/packer/http/ollama-models.tar.zst
 
       - name: Initialize Packer
         working-directory: infrastructure/packer
