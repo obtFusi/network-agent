@@ -259,29 +259,20 @@ build {
     ]
   }
 
-  # Step 7a: Download Ollama models from Packer HTTP server
-  # QEMU user networking: host is 10.0.2.2, fixed port 8080
-  # Step 7a: Transfer Ollama models via SCP (more reliable than HTTP for 20GB)
-  # File provisioner uses SSH/SCP which handles large files better than Packer's HTTP server
+  # Step 7a: Transfer Ollama models from host cache
+  # QEMU user networking: host is 10.0.2.2
+  # Uses SEPARATE Python HTTP server on port 8081 (not Packer's built-in)
+  # Packer's HTTP server is unreliable for 20GB files, Python's is stable
+  # curl with retries handles transient network issues
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
       "source /usr/local/bin/telemetry.sh",
       "telemetry_start 'Step7a_Transfer_Models'",
       "echo '=== Checking disk space before transfer ==='",
-      "df -h /var/tmp"
-    ]
-  }
-
-  provisioner "file" {
-    source      = "http/ollama-models.tar.zst"
-    destination = "/var/tmp/ollama-models.tar.zst"
-  }
-
-  provisioner "shell" {
-    inline_shebang = "/bin/bash -e"
-    inline = [
-      "source /usr/local/bin/telemetry.sh",
+      "df -h /var/tmp",
+      "echo '=== Transferring Ollama models from build host ==='",
+      "curl --retry 5 --retry-delay 10 --retry-max-time 600 -fSL --progress-bar -o /var/tmp/ollama-models.tar.zst http://10.0.2.2:8081/ollama-models.tar.zst",
       "echo '=== Transfer complete, verifying ==='",
       "ls -lh /var/tmp/ollama-models.tar.zst",
       "zstd -t /var/tmp/ollama-models.tar.zst && echo 'Integrity verified!' || exit 1",
