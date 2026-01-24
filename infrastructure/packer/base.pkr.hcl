@@ -157,7 +157,7 @@ build {
       "source /usr/local/bin/telemetry.sh",
       "telemetry_start 'Step1_Base_packages'",
       "apt-get update",
-      "apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release sudo vim-tiny htop jq zstd qemu-guest-agent bc",
+      "apt-get install -y --no-install-recommends curl wget ca-certificates gnupg lsb-release sudo vim-tiny htop jq zstd qemu-guest-agent bc",
       "systemctl enable qemu-guest-agent",
       "telemetry_end 'Step1_Base_packages'"
     ]
