@@ -93,7 +93,30 @@ update_status() {
                 fi
             fi
 
-            # Save state for next iteration
+            # QEMU process info and I/O (captures VM traffic!)
+            qemu_pid=$(pgrep -f "qemu-system" | head -1)
+            qemu_mem=""; qemu_cpu=""; qemu_read=0; qemu_write=0
+            qemu_read_rate=0; qemu_write_rate=0
+            if [[ -n "$qemu_pid" ]]; then
+                qemu_stats=$(ps -p $qemu_pid -o %cpu,%mem --no-headers 2>/dev/null)
+                qemu_cpu=$(echo $qemu_stats | awk "{print \$1}")
+                qemu_mem=$(echo $qemu_stats | awk "{print \$2}")
+                # Get QEMU process I/O from /proc (this captures VM network + disk!)
+                if [[ -f "/proc/$qemu_pid/io" ]]; then
+                    qemu_read=$(grep "^read_bytes:" /proc/$qemu_pid/io | awk "{print \$2}")
+                    qemu_write=$(grep "^write_bytes:" /proc/$qemu_pid/io | awk "{print \$2}")
+                    # Calculate rates from previous state
+                    if [[ -f "$STATE_FILE" ]] && grep -q "PREV_QEMU_READ" "$STATE_FILE" 2>/dev/null; then
+                        source "$STATE_FILE"
+                        if [[ $elapsed -gt 0 && -n "$PREV_QEMU_READ" ]]; then
+                            qemu_read_rate=$(( (qemu_read - PREV_QEMU_READ) / elapsed / 1024 / 1024 ))
+                            qemu_write_rate=$(( (qemu_write - PREV_QEMU_WRITE) / elapsed / 1024 / 1024 ))
+                        fi
+                    fi
+                fi
+            fi
+
+            # Save state for next iteration (include QEMU I/O)
             cat > "$STATE_FILE" << EOF
 PREV_TIME=$NOW
 PREV_DISK_READ=$disk_read_sectors
@@ -102,33 +125,62 @@ PREV_DISK_READS=$disk_reads
 PREV_DISK_WRITES=$disk_writes
 PREV_NET_RX=$net_rx
 PREV_NET_TX=$net_tx
+PREV_QEMU_READ=$qemu_read
+PREV_QEMU_WRITE=$qemu_write
 EOF
 
-            # QEMU process info
-            qemu_pid=$(pgrep -f "qemu-system" | head -1)
-            qemu_mem=""; qemu_cpu=""
-            if [[ -n "$qemu_pid" ]]; then
-                qemu_stats=$(ps -p $qemu_pid -o %cpu,%mem --no-headers 2>/dev/null)
-                qemu_cpu=$(echo $qemu_stats | awk "{print \$1}")
-                qemu_mem=$(echo $qemu_stats | awk "{print \$2}")
-            fi
-
-            # Output JSON with rates
+            # Output JSON with rates (use QEMU I/O for disk/net during VM build)
             cat << EOF
 {
   "cpu_user":$cpu_user,"cpu_sys":$cpu_sys,"cpu_idle":$cpu_idle,"cpu_iowait":$cpu_iowait,
   "mem_total":$mem_total,"mem_used":$mem_used,"mem_free":$mem_free,
-  "disk_read_mb":$disk_read_rate,"disk_write_mb":$disk_write_rate,"iops":$iops,
-  "net_rx_mb":$net_rx_rate,"net_tx_mb":$net_tx_rate,
-  "net_rx_total":$net_rx,"net_tx_total":$net_tx,
+  "disk_read_mb":$qemu_read_rate,"disk_write_mb":$qemu_write_rate,"iops":$iops,
+  "net_rx_mb":$qemu_read_rate,"net_tx_mb":$qemu_write_rate,
+  "net_rx_total":$qemu_read,"net_tx_total":$qemu_write,
   "load":$load,"qemu_cpu":"$qemu_cpu","qemu_mem":"$qemu_mem"
 }
 EOF
         ' 2>/dev/null || echo '{}')
+
+        # Also get Packer internal steps from log (sed-based extraction)
+        packer_steps=$(ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@github-runner '
+            LOG="/tmp/packer-build.log"
+            [[ ! -f "$LOG" ]] && echo "[]" && exit 0
+
+            # Extract step|START/END|timestamp using sed (ANSI-stripped)
+            declare -A starts
+            declare -A ends
+
+            while IFS="|" read -r step action ts; do
+                [[ -z "$step" ]] && continue
+                if [[ "$action" == "START" ]]; then
+                    starts["$step"]="$ts"
+                elif [[ "$action" == "END" ]]; then
+                    ends["$step"]="$ts"
+                fi
+            done < <(grep -E "START:|END:" "$LOG" 2>/dev/null | \
+                sed "s/\x1b\[[0-9;]*m//g" | \
+                sed "s/.*\[\([A-Za-z0-9_]*\)\] \(START\|END\): \([0-9T:+-]*\).*/\1|\2|\3/")
+
+            # Build JSON array (sorted by start time)
+            echo -n "["
+            first=true
+            for step in $(for s in "${!starts[@]}"; do echo "${starts[$s]}|$s"; done | sort | cut -d"|" -f2); do
+                [[ "$first" == "true" ]] || echo -n ","
+                first=false
+                start="${starts[$step]}"
+                end="${ends[$step]:-}"
+                status="in_progress"
+                [[ -n "$end" ]] && status="completed"
+                echo -n "{\"name\":\"$step\",\"status\":\"$status\",\"started_at\":\"$start\",\"completed_at\":\"${end:-}\"}"
+            done
+            echo "]"
+        ' 2>/dev/null || echo '[]')
     fi
 
-    # Combine status, logs and metrics
-    echo "$status_json" | jq --arg rid "$id" --argjson logs "$logs_array" --argjson metrics "$metrics_json" '{
+    # Combine status, logs, metrics and packer steps
+    local packer_steps_json="${packer_steps:-[]}"
+    echo "$status_json" | jq --arg rid "$id" --argjson logs "$logs_array" --argjson metrics "$metrics_json" --argjson packer_steps "$packer_steps_json" '{
         run_id: $rid,
         job: "Build Appliance",
         version: .headBranch,
@@ -139,6 +191,7 @@ EOF
         url: .url,
         logs: $logs,
         metrics: $metrics,
+        packer_steps: $packer_steps,
         steps: [.jobs[] | select(.name=="Build Appliance") | .steps[] | {
             name: .name,
             status: .status,

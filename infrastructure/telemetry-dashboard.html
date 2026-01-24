@@ -614,11 +614,23 @@
                 </div>
             </div>
 
-            <!-- Build Steps -->
+            <!-- Packer Internal Steps (VM Provisioning) -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">🔧</div>
+                    <div class="card-title">Packer Build Steps</div>
+                    <span id="packer-steps-count" style="font-size: 11px; color: var(--text-secondary);">Live</span>
+                </div>
+                <div id="packer-steps-list" class="steps-list">
+                    <div class="metric-no-data">Warte auf Packer Build...</div>
+                </div>
+            </div>
+
+            <!-- GitHub Actions Steps -->
             <div class="card">
                 <div class="card-header">
                     <div class="card-icon">📋</div>
-                    <div class="card-title">Build Progress</div>
+                    <div class="card-title">GitHub Actions Steps</div>
                 </div>
                 <div id="steps-list" class="steps-list"></div>
             </div>
@@ -966,6 +978,11 @@
                 renderDurationChart(data.steps);
             }
 
+            // Render internal Packer build steps (VM provisioning)
+            if (data.packer_steps?.length) {
+                renderPackerSteps(data.packer_steps);
+            }
+
             // Render live logs if available
             if (data.logs?.length) {
                 renderLiveLogs(data.logs);
@@ -1186,8 +1203,14 @@
             descEl.textContent = `Step ${completedSteps + 1} of ${totalSteps}`;
             iconEl.textContent = icon;
             timerEl.textContent = elapsed;
-            packerStepEl.textContent = stepName.includes('Build appliance') ? 'Running VM provisioners...' : '-';
             packerPhaseEl.textContent = phase;
+
+            // Show current Packer step if in Build appliance phase
+            if (stepName.includes('Build appliance') && window.currentPackerStep) {
+                packerStepEl.textContent = window.currentPackerStep;
+            } else {
+                packerStepEl.textContent = stepName.includes('Build appliance') ? 'Running VM provisioners...' : '-';
+            }
         }
 
         function renderStepsList(steps) {
@@ -1220,6 +1243,65 @@
                 `;
             }).join('');
             document.getElementById('steps-list').innerHTML = html;
+        }
+
+        function renderPackerSteps(packerSteps) {
+            const container = document.getElementById('packer-steps-list');
+            const countEl = document.getElementById('packer-steps-count');
+
+            if (!packerSteps || packerSteps.length === 0) {
+                container.innerHTML = '<div class="metric-no-data">Warte auf Packer Build...</div>';
+                countEl.textContent = '';
+                window.currentPackerStep = null;
+                return;
+            }
+
+            // Count completed and in-progress
+            const completed = packerSteps.filter(s => s.status === 'completed').length;
+            const inProgress = packerSteps.find(s => s.status === 'in_progress');
+            countEl.textContent = `${completed}/${packerSteps.length} done${inProgress ? ' • 🔄 Live' : ''}`;
+
+            // Store current Packer step for activity display
+            window.currentPackerStep = inProgress ?
+                inProgress.name.replace(/^Step\d+[a-z]?_/, '').replace(/_/g, ' ') :
+                null;
+
+            const html = packerSteps.map(s => {
+                let icon, iconClass;
+                if (s.status === 'in_progress') {
+                    icon = '●';
+                    iconClass = 'running';
+                } else if (s.status === 'completed') {
+                    icon = '✓';
+                    iconClass = 'completed';
+                } else {
+                    icon = '○';
+                    iconClass = 'pending';
+                }
+
+                // Calculate duration
+                let duration = 0;
+                if (s.started_at && s.completed_at) {
+                    duration = (new Date(s.completed_at) - new Date(s.started_at)) / 1000;
+                } else if (s.started_at && s.status === 'in_progress') {
+                    duration = (Date.now() - new Date(s.started_at)) / 1000;
+                }
+
+                // Format step name (remove Step prefix, replace underscores)
+                const displayName = s.name
+                    .replace(/^Step\d+[a-z]?_/, '')
+                    .replace(/_/g, ' ');
+
+                return `
+                    <div class="step-item ${s.status === 'in_progress' ? 'active' : ''}">
+                        <div class="step-icon ${iconClass}">${icon}</div>
+                        <span class="step-name">${displayName}</span>
+                        <span class="step-duration">${formatDuration(duration)}</span>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = html;
         }
 
         function renderDurationChart(steps) {
