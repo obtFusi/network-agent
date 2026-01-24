@@ -64,8 +64,8 @@ telemetry_step_start() {
     # CPU idle (from /proc/stat)
     awk '/^cpu / {print $5}' /proc/stat > "${STEP_FILE}_start_cpu"
 
-    # Disk stats (reads, writes, read_bytes, write_bytes)
-    awk '/[sv]da|nvme0n1/ {print $4, $8, $6*512, $10*512; exit}' /proc/diskstats > "${STEP_FILE}_start_disk" 2>/dev/null || echo "0 0 0 0" > "${STEP_FILE}_start_disk"
+    # Disk stats (reads, writes, read_bytes, write_bytes, read_time_ms, write_time_ms, io_time_ms, weighted_io_ms)
+    awk '/[sv]da|nvme0n1/ {print $4, $8, $6*512, $10*512, $7, $11, $13, $14; exit}' /proc/diskstats > "${STEP_FILE}_start_disk" 2>/dev/null || echo "0 0 0 0 0 0 0 0" > "${STEP_FILE}_start_disk"
 
     # Network stats (rx_bytes, tx_bytes)
     awk '/eth0|ens|enp/ {gsub(/:/, ""); print $2, $10; exit}' /proc/net/dev > "${STEP_FILE}_start_net" 2>/dev/null || echo "0 0" > "${STEP_FILE}_start_net"
@@ -99,12 +99,36 @@ telemetry_step_end() {
     fi
 
     # Disk analysis
-    read DISK_START_R DISK_START_W DISK_START_RB DISK_START_WB < "${STEP_FILE}_start_disk" 2>/dev/null || { DISK_START_R=0; DISK_START_W=0; DISK_START_RB=0; DISK_START_WB=0; }
-    read DISK_END_R DISK_END_W DISK_END_RB DISK_END_WB <<< $(awk '/[sv]da|nvme0n1/ {print $4, $8, $6*512, $10*512; exit}' /proc/diskstats 2>/dev/null || echo "0 0 0 0")
+    read DISK_START_R DISK_START_W DISK_START_RB DISK_START_WB DISK_START_RT DISK_START_WT DISK_START_IOT DISK_START_WIO < "${STEP_FILE}_start_disk" 2>/dev/null || { DISK_START_R=0; DISK_START_W=0; DISK_START_RB=0; DISK_START_WB=0; DISK_START_RT=0; DISK_START_WT=0; DISK_START_IOT=0; DISK_START_WIO=0; }
+    read DISK_END_R DISK_END_W DISK_END_RB DISK_END_WB DISK_END_RT DISK_END_WT DISK_END_IOT DISK_END_WIO <<< $(awk '/[sv]da|nvme0n1/ {print $4, $8, $6*512, $10*512, $7, $11, $13, $14; exit}' /proc/diskstats 2>/dev/null || echo "0 0 0 0 0 0 0 0")
     local DISK_READS=$((DISK_END_R - DISK_START_R))
     local DISK_WRITES=$((DISK_END_W - DISK_START_W))
     local DISK_READ_MB=$(( (DISK_END_RB - DISK_START_RB) / 1048576 ))
     local DISK_WRITE_MB=$(( (DISK_END_WB - DISK_START_WB) / 1048576 ))
+
+    # I/O timing: wait time and queue depth
+    local DISK_READ_TIME_MS=$((DISK_END_RT - DISK_START_RT))
+    local DISK_WRITE_TIME_MS=$((DISK_END_WT - DISK_START_WT))
+    local DISK_IO_TIME_MS=$((DISK_END_IOT - DISK_START_IOT))
+    local DISK_WEIGHTED_IO_MS=$((DISK_END_WIO - DISK_START_WIO))
+
+    # Calculate average wait time per I/O (ms)
+    local TOTAL_IOS=$((DISK_READS + DISK_WRITES))
+    local TOTAL_IO_TIME_MS=$((DISK_READ_TIME_MS + DISK_WRITE_TIME_MS))
+    local AVG_WAIT_MS=0
+    [[ $TOTAL_IOS -gt 0 ]] && AVG_WAIT_MS=$((TOTAL_IO_TIME_MS / TOTAL_IOS))
+
+    # Calculate average queue depth (weighted_io_time / elapsed_time)
+    local DURATION_INT=${DURATION%.*}
+    [[ -z "$DURATION_INT" || "$DURATION_INT" -eq 0 ]] && DURATION_INT=1
+    local DURATION_MS=$((DURATION_INT * 1000))
+    local AVG_QUEUE_DEPTH=0
+    [[ $DURATION_MS -gt 0 ]] && AVG_QUEUE_DEPTH=$(echo "scale=2; $DISK_WEIGHTED_IO_MS / $DURATION_MS" | bc)
+
+    # Calculate disk utilization % (io_time / elapsed_time * 100)
+    local DISK_UTIL=0
+    [[ $DURATION_MS -gt 0 ]] && DISK_UTIL=$((DISK_IO_TIME_MS * 100 / DURATION_MS))
+    [[ $DISK_UTIL -gt 100 ]] && DISK_UTIL=100
 
     # Network analysis
     read NET_START_RX NET_START_TX < "${STEP_FILE}_start_net" 2>/dev/null || { NET_START_RX=0; NET_START_TX=0; }
@@ -117,9 +141,7 @@ telemetry_step_end() {
     read MEM_END_USED MEM_END_AVAIL <<< $(awk '/MemTotal/ {total=$2} /MemAvailable/ {avail=$2} END {print int((total-avail)/1024), int(avail/1024)}' /proc/meminfo)
     local MEM_DELTA=$((MEM_END_USED - MEM_START_USED))
 
-    # Calculate throughput
-    local DURATION_INT=${DURATION%.*}
-    [[ -z "$DURATION_INT" || "$DURATION_INT" -eq 0 ]] && DURATION_INT=1
+    # Calculate throughput (DURATION_INT already set above)
     local DISK_READ_RATE=$((DISK_READ_MB / DURATION_INT))
     local DISK_WRITE_RATE=$((DISK_WRITE_MB / DURATION_INT))
     local NET_RX_RATE=$((NET_RX_MB / DURATION_INT))
@@ -134,6 +156,7 @@ telemetry_step_end() {
     printf '  %-14s %s\n' 'Memory:' "${MEM_END_USED}MB used (Δ${MEM_DELTA}MB)"
     printf '  %-14s %s\n' 'Disk Read:' "${DISK_READ_MB}MB (${DISK_READ_RATE}MB/s, ${DISK_READS} ops)"
     printf '  %-14s %s\n' 'Disk Write:' "${DISK_WRITE_MB}MB (${DISK_WRITE_RATE}MB/s, ${DISK_WRITES} ops)"
+    printf '  %-14s %s\n' 'Disk I/O:' "util=${DISK_UTIL}%, await=${AVG_WAIT_MS}ms, queue=${AVG_QUEUE_DEPTH}"
     printf '  %-14s %s\n' 'Net RX:' "${NET_RX_MB}MB (${NET_RX_RATE}MB/s)"
     printf '  %-14s %s\n' 'Net TX:' "${NET_TX_MB}MB (${NET_TX_RATE}MB/s)"
     echo "═══════════════════════════════════════════════════════════════════════"
@@ -155,6 +178,9 @@ telemetry_step_end() {
     "disk_write_ops": $DISK_WRITES,
     "disk_read_rate_mbs": $DISK_READ_RATE,
     "disk_write_rate_mbs": $DISK_WRITE_RATE,
+    "disk_util_percent": $DISK_UTIL,
+    "await_ms": $AVG_WAIT_MS,
+    "queue_depth": $AVG_QUEUE_DEPTH,
     "net_rx_mb": $NET_RX_MB,
     "net_tx_mb": $NET_TX_MB,
     "net_rx_rate_mbs": $NET_RX_RATE,
