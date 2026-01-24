@@ -245,7 +245,8 @@ jobs:
             df -h /
           fi
 
-          # Symlink for Packer HTTP server
+          # Symlink for Packer HTTP server (ensure we're in the workspace)
+          cd "$GITHUB_WORKSPACE"
           mkdir -p infrastructure/packer/http
           ln -sf "$ARCHIVE_PATH" infrastructure/packer/http/ollama-models.tar.zst
 
