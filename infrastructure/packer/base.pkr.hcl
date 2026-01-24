@@ -255,19 +255,31 @@ build {
     ]
   }
 
-  # Step 7a: Download Ollama models via HTTP (FAST: parallel, ~500MB/s vs SCP ~100MB/s)
+  # Step 7a: Copy Ollama models via SCP (file provisioner)
+  # Using file provisioner instead of HTTP due to template variable issues
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
       "source /usr/local/bin/telemetry.sh",
-      "telemetry_start 'Step7a_Download_Models'",
-      "echo '=== Downloading Ollama models via HTTP ==='",
-      "cd /var/tmp",
-      "MODEL_URL='http://{{ .HTTPIP }}:{{ .HTTPPort }}/ollama-models.tar.zst'",
-      "echo \"Downloading from: $MODEL_URL\"",
-      "wget --progress=dot:giga \"$MODEL_URL\" -O ollama-models.tar.zst",
-      "ls -lh ollama-models.tar.zst",
-      "telemetry_end 'Step7a_Download_Models'"
+      "telemetry_start 'Step7a_Transfer_Models'",
+      "echo '=== Preparing for model transfer via SCP ==='",
+      "mkdir -p /var/tmp",
+      "echo 'Ready for file transfer'"
+    ]
+  }
+
+  provisioner "file" {
+    source      = "http/ollama-models.tar.zst"
+    destination = "/var/tmp/ollama-models.tar.zst"
+  }
+
+  provisioner "shell" {
+    inline_shebang = "/bin/bash -e"
+    inline = [
+      "source /usr/local/bin/telemetry.sh",
+      "echo '=== Model transfer complete ==='",
+      "ls -lh /var/tmp/ollama-models.tar.zst",
+      "telemetry_end 'Step7a_Transfer_Models'"
     ]
   }
 
