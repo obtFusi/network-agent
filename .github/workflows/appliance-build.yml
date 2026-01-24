@@ -33,6 +33,8 @@ concurrency:
 env:
   PACKER_VERSION: "1.11.0"
   TEST_VMID: 999
+  TELEMETRY_DIR: /tmp/telemetry
+  TELEMETRY_BUCKET: appliance-telemetry
 
 permissions:
   contents: write
@@ -107,6 +109,19 @@ jobs:
       - uses: actions/checkout@v4
 
       # ═══════════════════════════════════════════════════════════
+      # TELEMETRY INITIALIZATION
+      # ═══════════════════════════════════════════════════════════
+
+      - name: Initialize telemetry
+        id: telemetry
+        run: |
+          chmod +x infrastructure/scripts/telemetry.sh
+          source infrastructure/scripts/telemetry.sh
+          telemetry_init "build" "${VERSION#v}"
+          # Make script available for all subsequent steps
+          cp infrastructure/scripts/telemetry.sh /tmp/telemetry.sh
+
+      # ═══════════════════════════════════════════════════════════
       # CLEANUP-ONLY MODE (manual artifact cleanup)
       # ═══════════════════════════════════════════════════════════
 
@@ -157,6 +172,8 @@ jobs:
         env:
           OLLAMA_MODEL: 'qwen3:30b-a3b'
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "ollama_cache_prepare"
           CACHE_DIR="/opt/ollama-cache"
           ARCHIVE_PATH="$CACHE_DIR/ollama-models.tar.zst"
 
@@ -212,6 +229,8 @@ jobs:
           mkdir -p infrastructure/packer/http
           ln -sf "$ARCHIVE_PATH" infrastructure/packer/http/ollama-models.tar.zst
 
+          telemetry_step_end "ollama_cache_prepare"
+
       - name: Initialize Packer
         working-directory: infrastructure/packer
         run: packer init base.pkr.hcl
@@ -223,12 +242,23 @@ jobs:
       - name: Build appliance qcow2 image
         working-directory: infrastructure/packer
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "packer_build"
+
           VERSION_CLEAN="${VERSION#v}"
           echo "Building complete appliance version: $VERSION_CLEAN"
+
+          # Run packer and capture output for telemetry parsing
           packer build \
             -var "version=${VERSION_CLEAN}" \
             -on-error=abort \
-            base.pkr.hcl
+            base.pkr.hcl 2>&1 | tee /tmp/packer-build.log
+
+          telemetry_step_end "packer_build"
+
+          # Extract Packer's internal telemetry from log
+          echo "Extracting Packer step telemetry..."
+          grep -E "⏱️|Duration:|CPU:|Memory:|Disk|Net " /tmp/packer-build.log > $TELEMETRY_DIR/packer_steps.txt || true
 
       - name: Verify build output
         run: |
@@ -240,6 +270,9 @@ jobs:
 
       - name: Split into parts (no compression)
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "split_parts"
+
           cd infrastructure/packer/output
           VERSION_CLEAN="${VERSION#v}"
 
@@ -266,6 +299,9 @@ jobs:
           ls -lh *.part-*
           df -h .
 
+          source /tmp/telemetry.sh
+          telemetry_step_end "split_parts"
+
       - name: Generate checksums
         run: |
           cd infrastructure/packer/output
@@ -286,6 +322,9 @@ jobs:
         env:
           MC_HOST_local: "${{ secrets.MINIO_ENDPOINT }}|${{ secrets.MINIO_ACCESS_KEY }}|${{ secrets.MINIO_SECRET_KEY }}"
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "minio_upload"
+
           # Install mc client
           wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
           chmod +x /tmp/mc
@@ -300,6 +339,42 @@ jobs:
           # Verify upload
           echo "Uploaded to MinIO:"
           /tmp/mc ls minio/appliance-builds/${VERSION_CLEAN}/
+
+          telemetry_step_end "minio_upload"
+
+      - name: Finalize and upload telemetry
+        if: always()
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        run: |
+          source /tmp/telemetry.sh
+          telemetry_finalize
+
+          # Upload telemetry to MinIO for persistent storage
+          VERSION_CLEAN="${VERSION#v}"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc 2>/dev/null || true
+          chmod +x /tmp/mc 2>/dev/null || true
+
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY 2>/dev/null || true
+
+          # Create telemetry bucket if not exists
+          /tmp/mc mb --ignore-existing minio/$TELEMETRY_BUCKET 2>/dev/null || true
+
+          # Upload all telemetry files
+          if [[ -d "$TELEMETRY_DIR" ]]; then
+            /tmp/mc cp --recursive $TELEMETRY_DIR/ minio/$TELEMETRY_BUCKET/${VERSION_CLEAN}/${TIMESTAMP}/ 2>/dev/null || true
+            echo "📊 Telemetry uploaded to MinIO: $TELEMETRY_BUCKET/${VERSION_CLEAN}/${TIMESTAMP}/"
+          fi
+
+          # Also append to aggregate telemetry index
+          TELEMETRY_JSON=$(ls $TELEMETRY_DIR/*.json 2>/dev/null | head -1)
+          if [[ -f "$TELEMETRY_JSON" ]]; then
+            /tmp/mc cp "$TELEMETRY_JSON" minio/$TELEMETRY_BUCKET/latest/build_${VERSION_CLEAN}.json 2>/dev/null || true
+          fi
 
       - name: Cleanup build directory
         if: always()
@@ -336,6 +411,13 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Initialize telemetry
+        run: |
+          chmod +x infrastructure/scripts/telemetry.sh
+          source infrastructure/scripts/telemetry.sh
+          telemetry_init "e2e_test" "${VERSION}"
+          cp infrastructure/scripts/telemetry.sh /tmp/telemetry.sh
+
       - name: Validate Proxmox connectivity
         env:
           PVE_HOST: ${{ secrets.PVE_HOST }}
@@ -365,6 +447,9 @@ jobs:
           MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
           MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "minio_download"
+
           # Install mc client
           wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
           chmod +x /tmp/mc
@@ -383,10 +468,16 @@ jobs:
           cd infrastructure/packer/output
           sha256sum -c SHA256SUMS
 
+          source /tmp/telemetry.sh
+          telemetry_step_end "minio_download"
+
       - name: Create test VM
         env:
           PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "vm_create"
+
           # Clean up any existing test VM first
           ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
           ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
@@ -425,11 +516,17 @@ jobs:
           # Cleanup temp file on Proxmox
           ssh root@$PVE_HOST "rm -f $BUILD_TMP/network-agent-test.qcow2"
 
+          source /tmp/telemetry.sh
+          telemetry_step_end "vm_create"
+
       - name: Wait for boot and get IP
         id: vm-ip
         env:
           PVE_HOST: ${{ secrets.PVE_HOST }}
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "vm_boot_wait"
+
           echo "Waiting for VM to boot..."
           sleep 60
 
@@ -499,8 +596,14 @@ jobs:
             sleep 5
           done
 
+          source /tmp/telemetry.sh
+          telemetry_step_end "vm_boot_wait"
+
       - name: Configure and start services
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "services_start"
+
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 root@$VM_IP bash << 'EOF'
@@ -520,15 +623,26 @@ jobs:
             docker compose up -d
           EOF
 
+          source /tmp/telemetry.sh
+          telemetry_step_end "services_start"
+
       - name: Wait for services
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "services_wait"
+
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
           echo "Waiting for services..."
           sleep 120
           ssh -o StrictHostKeyChecking=no root@$VM_IP "docker compose -f /opt/network-agent/docker-compose.yml ps"
 
+          telemetry_step_end "services_wait"
+
       - name: Run health checks
         run: |
+          source /tmp/telemetry.sh
+          telemetry_step_start "health_checks"
+
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
           echo "=== Checking Ollama ==="
@@ -548,6 +662,38 @@ jobs:
 
           echo "=== Final status ==="
           ssh -o StrictHostKeyChecking=no root@$VM_IP "docker compose -f /opt/network-agent/docker-compose.yml ps"
+
+          source /tmp/telemetry.sh
+          telemetry_step_end "health_checks"
+
+      - name: Finalize and upload E2E telemetry
+        if: always()
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        run: |
+          source /tmp/telemetry.sh
+          telemetry_finalize
+
+          # Upload telemetry to MinIO
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc 2>/dev/null || true
+          chmod +x /tmp/mc 2>/dev/null || true
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY 2>/dev/null || true
+          /tmp/mc mb --ignore-existing minio/$TELEMETRY_BUCKET 2>/dev/null || true
+
+          if [[ -d "$TELEMETRY_DIR" ]]; then
+            /tmp/mc cp --recursive $TELEMETRY_DIR/ minio/$TELEMETRY_BUCKET/${VERSION}/${TIMESTAMP}/ 2>/dev/null || true
+            echo "📊 E2E Telemetry uploaded to MinIO: $TELEMETRY_BUCKET/${VERSION}/${TIMESTAMP}/"
+          fi
+
+          # Update latest E2E telemetry
+          TELEMETRY_JSON=$(ls $TELEMETRY_DIR/*.json 2>/dev/null | head -1)
+          if [[ -f "$TELEMETRY_JSON" ]]; then
+            /tmp/mc cp "$TELEMETRY_JSON" minio/$TELEMETRY_BUCKET/latest/e2e_${VERSION}.json 2>/dev/null || true
+          fi
 
       - name: Cleanup test VM
         # Only cleanup on success - keep VM for debugging on failure
