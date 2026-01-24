@@ -279,23 +279,14 @@ build {
   }
 
   # Step 7b: Extract Ollama models
-  # Uses Unix trick: open file descriptor, delete file, then read
-  # This frees 20GB immediately while extraction runs (prevents "No space left")
+  # Uses Unix fd trick: open fd, delete file (space freed), read from fd
+  # All commands in ONE string because Packer loses fd between inline commands
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
       "source /usr/local/bin/telemetry.sh",
       "telemetry_start 'Step7b_Extract_Models'",
-      "echo '=== Extracting Ollama models (space-optimized) ==='",
-      "df -h /",
-      "mkdir -p /tmp/ollama-cache",
-      "# Unix trick: open fd, delete file (stays until fd closes), extract, close fd",
-      "exec 3</var/tmp/ollama-models.tar.zst",
-      "rm /var/tmp/ollama-models.tar.zst",
-      "echo 'Freed compressed file space, extracting...'",
-      "df -h /",
-      "zstd -dc <&3 | tar -xf - -C /tmp/ollama-cache",
-      "exec 3<&-",
+      "echo '=== Extracting Ollama models (space-optimized) ===' && df -h / && mkdir -p /tmp/ollama-cache && exec 3</var/tmp/ollama-models.tar.zst && rm /var/tmp/ollama-models.tar.zst && echo 'Freed 20GB, extracting from fd...' && df -h / && zstd -dc <&3 | tar -xf - -C /tmp/ollama-cache && exec 3<&-",
       "ls -lh /tmp/ollama-cache/",
       "df -h /",
       "telemetry_end 'Step7b_Extract_Models'"

@@ -883,7 +883,7 @@
 
             // Then poll every 5 seconds
             // Poll every 30s to avoid GitHub API rate limits (60/hour unauthenticated)
-            pollingInterval = setInterval(pollOnce, 30000);
+            pollingInterval = setInterval(pollOnce, 10000);  // 10s refresh for live updates
         }
 
         async function pollOnce() {
