@@ -250,7 +250,7 @@ build {
       "ls -lh /mnt/host-cache/",
       "df -h /var/tmp",
       "echo 'Copying models (direct host access, no network)...'",
-      "time cp -v /mnt/host-cache/ollama-models.tar.zst /var/tmp/",
+      "/usr/bin/time -v cp /mnt/host-cache/ollama-models.tar.zst /var/tmp/",
       "umount /mnt/host-cache",
       "ls -lh /var/tmp/ollama-models.tar.zst",
       "zstd -t /var/tmp/ollama-models.tar.zst && echo 'Integrity OK'"
