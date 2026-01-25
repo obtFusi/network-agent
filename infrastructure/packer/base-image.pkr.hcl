@@ -249,8 +249,9 @@ build {
       "mount -t 9p -o trans=virtio,version=9p2000.L,ro ollama-cache /mnt/host-cache",
       "ls -lh /mnt/host-cache/",
       "df -h /var/tmp",
-      "echo 'Copying models (direct host access, no network)...'",
-      "START=$$(date +%s) && cp /mnt/host-cache/ollama-models.tar.zst /var/tmp/ && END=$$(date +%s) && echo \"Transfer completed in $$((END-START)) seconds\"",
+      "date '+Start: %H:%M:%S'",
+      "cp /mnt/host-cache/ollama-models.tar.zst /var/tmp/",
+      "date '+End: %H:%M:%S'",
       "umount /mnt/host-cache",
       "ls -lh /var/tmp/ollama-models.tar.zst",
       "zstd -t /var/tmp/ollama-models.tar.zst && echo 'Integrity OK'"
