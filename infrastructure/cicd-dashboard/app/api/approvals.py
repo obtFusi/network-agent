@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Approval
 from app.services.approval_service import ApprovalError, ApprovalService
+from app.services.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ async def list_pending_approvals(db: DB):
     Returns:
         List of pending approvals with context
     """
-    service = ApprovalService(db)
+    service = ApprovalService(db, event_bus=event_bus)
     approvals = await service.get_pending_approvals()
 
     result = []
@@ -119,7 +120,7 @@ async def get_approval(approval_id: str, db: DB):
     Returns:
         Approval details including status and response
     """
-    service = ApprovalService(db)
+    service = ApprovalService(db, event_bus=event_bus)
     approval = await service.get_approval(approval_id)
 
     if not approval:
@@ -153,7 +154,7 @@ async def approve_request(approval_id: str, request: ApproveRequest, db: DB):
     Returns:
         Updated approval with APPROVED status
     """
-    service = ApprovalService(db)
+    service = ApprovalService(db, event_bus=event_bus)
 
     try:
         await service.approve(approval_id, request.user, request.comment)
@@ -198,7 +199,7 @@ async def reject_request(approval_id: str, request: RejectRequest, db: DB):
     Returns:
         Updated approval with REJECTED status
     """
-    service = ApprovalService(db)
+    service = ApprovalService(db, event_bus=event_bus)
 
     try:
         await service.reject(approval_id, request.user, request.reason)
