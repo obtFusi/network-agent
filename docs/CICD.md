@@ -692,7 +692,91 @@ curl -X POST http://localhost:8081/api/v1/webhooks/github \
   -d '{"action":"labeled","label":{"name":"status:ready"},"issue":{"number":1,"title":"Test"},"repository":{"full_name":"test/repo"}}'
 ```
 
-### 4.7 Development
+### 4.7 Pipeline Orchestration
+
+The dashboard includes a full pipeline orchestration engine for managing multi-stage CI/CD pipelines.
+
+**Pipeline State Machine:**
+
+```
+                ┌─────────────┐
+                │   PENDING   │
+                └──────┬──────┘
+                       │ start()
+                       ▼
+                ┌─────────────┐
+     ┌─────────│   RUNNING   │─────────┐
+     │         └──────┬──────┘         │
+     │                │                │
+fail()│          wait_approval()  complete()
+     │                │                │
+     ▼                ▼                ▼
+┌──────────┐   ┌───────────────┐   ┌───────────┐
+│  FAILED  │   │   WAITING     │   │ COMPLETED │
+└──────────┘   │   APPROVAL    │   └───────────┘
+               └───────┬───────┘
+                       │
+          ┌────────────┼────────────┐
+          │            │            │
+     approve()    reject()      timeout()
+          │            │            │
+          ▼            ▼            ▼
+    ┌─────────┐  ┌─────────┐  ┌─────────┐
+    │ RUNNING │  │ FAILED  │  │ TIMEOUT │
+    └─────────┘  └─────────┘  └─────────┘
+
+Jederzeit: abort() → ABORTED
+```
+
+**Pipeline Stages:**
+
+| Stage | Steps | Failure Behavior |
+|-------|-------|------------------|
+| `validate` | lint, test, security, docker-build | Abort pipeline |
+| `review` | create-pr, wait-ci, pr-merge (approval) | Notify only |
+| `release` | create-release (approval), docker-push, appliance-build, close-issue | Rollback |
+
+**API Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/pipelines/{id}/start` | Start pipeline execution |
+| POST | `/api/v1/pipelines/{id}/abort` | Abort running pipeline |
+| POST | `/api/v1/pipelines/{id}/retry/{step_id}` | Retry failed step |
+| GET | `/api/v1/pipelines/running` | List running pipelines |
+| GET | `/api/v1/approvals/pending` | Get pending approvals |
+| GET | `/api/v1/approvals/{id}` | Get approval details |
+| POST | `/api/v1/approvals/{id}/approve` | Approve request |
+| POST | `/api/v1/approvals/{id}/reject` | Reject request |
+
+**Configuration:**
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `GITHUB_TOKEN` | PAT for GitHub API calls | required |
+| `APPROVAL_TIMEOUT_HOURS` | Hours before approval times out | 24 |
+| `PIPELINE_TIMEOUT_HOURS` | Max pipeline runtime | 48 |
+| `DEFAULT_REPO` | Default repository | obtFusi/network-agent |
+
+**Example Usage:**
+
+```bash
+# Start a pipeline
+curl -X POST "http://localhost:8081/api/v1/pipelines/{id}/start"
+
+# Check pending approvals
+curl "http://localhost:8081/api/v1/approvals/pending"
+
+# Approve a step
+curl -X POST "http://localhost:8081/api/v1/approvals/{id}/approve" \
+  -H "Content-Type: application/json" \
+  -d '{"user": "admin", "comment": "LGTM"}'
+
+# Abort a running pipeline
+curl -X POST "http://localhost:8081/api/v1/pipelines/{id}/abort"
+```
+
+### 4.8 Development
 
 ```bash
 cd infrastructure/cicd-dashboard
