@@ -132,18 +132,15 @@ jobs:
             sudo rm -rf /usr/share/ollama/.ollama/models
           fi
 
-      - name: Start NFS server for Packer
+      - name: Prepare virtio-9p cache access
         if: ${{ env.BASE_EXISTS != 'true' }}
         run: |
-          # NFS for QEMU VM - allow all IPs (runner is not public, safe)
-          # insecure: allow non-privileged ports (QEMU uses high ports)
-          sudo apt-get install -y nfs-kernel-server
-          echo "/opt/ollama-cache *(ro,sync,insecure,no_subtree_check,no_root_squash)" | sudo tee /etc/exports
-          sudo exportfs -rav
-          sudo systemctl restart nfs-server
-          # Verify export
-          showmount -e localhost
-          echo "NFS ready for QEMU VM"
+          # virtio-9p: direct host filesystem passthrough (faster than NFS)
+          # No NFS server needed - QEMU directly exposes host directory to VM
+          echo "virtio-9p cache path: /opt/ollama-cache"
+          ls -lh /opt/ollama-cache/
+          # Verify cache is readable
+          zstd -t /opt/ollama-cache/ollama-models.tar.zst && echo "Cache OK"
 
       - name: Initialize Packer
         if: ${{ env.BASE_EXISTS != 'true' }}
