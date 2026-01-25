@@ -239,49 +239,40 @@ build {
     ]
   }
 
-  # Step 7a: Transfer Ollama models via virtio-9p (faster than NFS)
+  # Step 7: Pre-baked Ollama models (direct copy via virtio-9p)
+  # Models are kept as directory on host (not tar.zst) for single-copy transfer
+  # This eliminates 2x redundant I/O compared to tar.zst approach
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
-      "echo '=== Step 7a: Transfer Ollama models via virtio-9p ==='",
+      "echo '=== Step 7: Pre-baked Ollama models via virtio-9p ==='",
       "mkdir -p /mnt/host-cache",
       "echo 'Mounting virtio-9p from host...'",
       "mount -t 9p -o trans=virtio,version=9p2000.L,ro ollama-cache /mnt/host-cache",
       "ls -lh /mnt/host-cache/",
-      "df -h /var/tmp",
+      "echo ''",
+      "echo 'Installing Ollama...'",
+      "curl -fsSL https://ollama.com/install.sh | sh",
+      "systemctl stop ollama || true",
+      "echo ''",
+      "echo 'Copying pre-baked models directly to Ollama directory...'",
+      "mkdir -p /usr/share/ollama/.ollama",
+      "df -h /",
       "date '+Start: %H:%M:%S'",
-      "cp /mnt/host-cache/ollama-models.tar.zst /var/tmp/",
+      "cp -r /mnt/host-cache/models /usr/share/ollama/.ollama/",
       "date '+End: %H:%M:%S'",
+      "df -h /",
       "umount /mnt/host-cache",
-      "ls -lh /var/tmp/ollama-models.tar.zst",
-      "zstd -t /var/tmp/ollama-models.tar.zst && echo 'Integrity OK'"
+      "chown -R ollama:ollama /usr/share/ollama/.ollama",
+      "echo ''",
+      "echo 'Verifying pre-baked models...'",
+      "systemctl start ollama",
+      "sleep 3",
+      "ollama list",
+      "systemctl stop ollama",
+      "echo '=== Pre-baked models installed successfully ==='"
     ]
     environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
-  }
-
-  # Step 7b: Extract Ollama models (space-optimized)
-  provisioner "shell" {
-    inline_shebang = "/bin/bash -e"
-    inline = [
-      "echo '=== Step 7b: Extracting Ollama models ==='",
-      "df -h /",
-      "mkdir -p /tmp/ollama-cache",
-      "exec 3</var/tmp/ollama-models.tar.zst && rm /var/tmp/ollama-models.tar.zst && echo 'Freed archive space' && df -h / && zstd -dc <&3 | tar -xf - -C /tmp/ollama-cache && exec 3<&-",
-      "ls -lh /tmp/ollama-cache/",
-      "df -h /"
-    ]
-  }
-
-  # Step 7c: Install Ollama + import models from cache
-  provisioner "shell" {
-    scripts = [
-      "scripts/03-pull-ollama-model.sh"
-    ]
-    environment_vars = [
-      "DEBIAN_FRONTEND=noninteractive",
-      "OLLAMA_MODEL=${var.ollama_model}"
-    ]
-    execute_command = "chmod +x {{ .Path }}; {{ .Vars }} {{ .Path }}"
   }
 
   # Step 8: Create placeholder for Network Agent
