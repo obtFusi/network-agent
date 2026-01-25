@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Pipeline, PipelineStatus
 from app.schemas import PipelineResponse
+from app.services.event_bus import event_bus
 from app.services.pipeline_executor import PipelineExecutor, PipelineExecutorError
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ def get_executor(db: AsyncSession) -> PipelineExecutor:
     """Get or create the pipeline executor."""
     global _executor
     if _executor is None:
-        _executor = PipelineExecutor(db)
+        _executor = PipelineExecutor(db, event_bus=event_bus)
     else:
         _executor.db = db
     return _executor
