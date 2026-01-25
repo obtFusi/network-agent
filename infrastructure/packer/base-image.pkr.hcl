@@ -60,10 +60,10 @@ variable "ollama_model" {
   default     = "qwen3:30b-a3b"
 }
 
-variable "nfs_server_ip" {
+variable "ollama_cache_path" {
   type        = string
-  description = "IP of NFS server (10.0.2.2 = QEMU user-mode host)"
-  default     = "10.0.2.2"
+  description = "Host path to Ollama cache (for virtio-9p passthrough)"
+  default     = "/opt/ollama-cache"
 }
 
 # Local variables
@@ -126,7 +126,9 @@ source "qemu" "base" {
   vnc_port_max     = 5999
 
   qemuargs = [
-    ["-cpu", "host"]
+    ["-cpu", "host"],
+    # virtio-9p: Direct host filesystem passthrough (faster than NFS)
+    ["-virtfs", "local,path=${var.ollama_cache_path},mount_tag=ollama-cache,security_model=none,readonly=on"]
   ]
 }
 
@@ -141,7 +143,8 @@ build {
     inline = [
       "echo '=== Step 1: Base packages ==='",
       "apt-get update",
-      "apt-get install -y --no-install-recommends curl wget ca-certificates gnupg lsb-release sudo vim-tiny htop jq zstd qemu-guest-agent bc nfs-common",
+      # 9pnet_virtio module is built-in on Debian, no nfs-common needed
+      "apt-get install -y --no-install-recommends curl wget ca-certificates gnupg lsb-release sudo vim-tiny htop jq zstd qemu-guest-agent bc",
       "systemctl enable qemu-guest-agent"
     ]
     environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
@@ -236,19 +239,24 @@ build {
     ]
   }
 
-  # Step 7a: Transfer Ollama models via NFS
+  # Step 7a: Transfer Ollama models via virtio-9p (faster than NFS)
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
-      "echo '=== Step 7a: Transfer Ollama models via NFS ==='",
-      "mkdir -p /mnt/nfs-cache",
-      "echo 'Mounting NFS from ${var.nfs_server_ip}...'",
-      "mount -t nfs -o ro,vers=4 ${var.nfs_server_ip}:/opt/ollama-cache /mnt/nfs-cache",
-      "ls -lh /mnt/nfs-cache/",
+      "echo '=== Step 7a: Transfer Ollama models via virtio-9p ==='",
+      "mkdir -p /mnt/host-cache",
+      "echo 'Mounting virtio-9p from host...'",
+      "mount -t 9p -o trans=virtio,version=9p2000.L,ro ollama-cache /mnt/host-cache",
+      "ls -lh /mnt/host-cache/",
       "df -h /var/tmp",
-      "echo 'Copying models...'",
-      "cp -v /mnt/nfs-cache/ollama-models.tar.zst /var/tmp/",
-      "umount /mnt/nfs-cache",
+      "echo 'Copying models (direct host access, no network)...'",
+      "START=$(date +%s)",
+      "cp -v /mnt/host-cache/ollama-models.tar.zst /var/tmp/",
+      "END=$(date +%s)",
+      "SIZE=$(stat -c%s /var/tmp/ollama-models.tar.zst)",
+      "SECS=$((END-START))",
+      "echo \"Transfer: $((SIZE/1024/1024)) MB in ${SECS}s = $((SIZE/1024/1024/SECS)) MB/s\"",
+      "umount /mnt/host-cache",
       "ls -lh /var/tmp/ollama-models.tar.zst",
       "zstd -t /var/tmp/ollama-models.tar.zst && echo 'Integrity OK'"
     ]
