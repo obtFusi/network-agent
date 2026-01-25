@@ -1,5 +1,6 @@
 """FastAPI application for CI/CD Dashboard."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -10,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app import __version__
 from app.api.approvals import router as approvals_router
+from app.api.events import router as events_router
 from app.api.pipelines import router as pipelines_router
 from app.api.webhooks import router as webhooks_router
 from app.config import settings
@@ -20,13 +22,25 @@ from app.schemas import (
     PipelineListResponse,
     PipelineResponse,
 )
+from app.services.event_bus import heartbeat_task
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: initialize database on startup."""
+    """Application lifespan: initialize database and start background tasks."""
     await init_db()
+
+    # Start heartbeat task for SSE keep-alive
+    heartbeat = asyncio.create_task(heartbeat_task(interval=30.0))
+
     yield
+
+    # Cancel heartbeat task on shutdown
+    heartbeat.cancel()
+    try:
+        await heartbeat
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(
@@ -38,6 +52,7 @@ app = FastAPI(
 
 # Include routers
 app.include_router(approvals_router)
+app.include_router(events_router)
 app.include_router(pipelines_router)
 app.include_router(webhooks_router)
 
