@@ -131,8 +131,11 @@ source "qemu" "appliance" {
   vnc_port_max     = 5999
 
   # CPU passthrough for better build performance
+  # virtio-9p for direct host-to-guest file sharing (no network = reliable)
   qemuargs = [
-    ["-cpu", "host"]
+    ["-cpu", "host"],
+    ["-fsdev", "local,id=ollama_cache,path=/opt/ollama-cache,security_model=mapped-xattr"],
+    ["-device", "virtio-9p-pci,fsdev=ollama_cache,mount_tag=ollama_cache"]
   ]
 }
 
@@ -259,21 +262,24 @@ build {
     ]
   }
 
-  # Step 7a: Transfer Ollama models from host cache
-  # QEMU user networking: host is 10.0.2.2
-  # Uses SEPARATE Python HTTP server on port 8081 (not Packer's built-in)
-  # Packer's HTTP server is unreliable for 20GB files, Python's is stable
-  # curl with retries handles transient network issues
+  # Step 7a: Transfer Ollama models from host cache via virtio-9p
+  # Direct host-to-guest file sharing - no network involved = 100% reliable
+  # virtio-9p mount tag 'ollama_cache' is configured in qemuargs above
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
       "source /usr/local/bin/telemetry.sh",
       "telemetry_start 'Step7a_Transfer_Models'",
-      "echo '=== Checking disk space before transfer ==='",
+      "echo '=== Mounting host cache via virtio-9p ==='",
+      "mkdir -p /mnt/host-cache",
+      "mount -t 9p -o trans=virtio,version=9p2000.L ollama_cache /mnt/host-cache",
+      "ls -lh /mnt/host-cache/",
+      "echo '=== Checking disk space ==='",
       "df -h /var/tmp",
-      "echo '=== Transferring Ollama models from build host ==='",
-      "curl --retry 5 --retry-delay 10 --retry-max-time 600 -fSL --progress-bar -o /var/tmp/ollama-models.tar.zst http://10.0.2.2:8081/ollama-models.tar.zst",
-      "echo '=== Transfer complete, verifying ==='",
+      "echo '=== Copying Ollama models (direct, no network) ==='",
+      "cp -v /mnt/host-cache/ollama-models.tar.zst /var/tmp/",
+      "echo '=== Unmounting and verifying ==='",
+      "umount /mnt/host-cache",
       "ls -lh /var/tmp/ollama-models.tar.zst",
       "zstd -t /var/tmp/ollama-models.tar.zst && echo 'Integrity verified!' || exit 1",
       "telemetry_end 'Step7a_Transfer_Models'"
