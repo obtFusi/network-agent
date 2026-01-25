@@ -6,10 +6,18 @@ from app.schemas.pipeline import (
     PipelineListResponse,
     PipelineStepResponse,
 )
+from app.schemas.webhook import (
+    WebhookEventResponse,
+    WebhookEventListResponse,
+    WebhookEventDetailResponse,
+)
 
 __all__ = [
     "PipelineCreate",
     "PipelineResponse",
     "PipelineListResponse",
     "PipelineStepResponse",
+    "WebhookEventResponse",
+    "WebhookEventListResponse",
+    "WebhookEventDetailResponse",
 ]

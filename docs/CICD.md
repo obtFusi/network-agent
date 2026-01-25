@@ -617,6 +617,9 @@ The CI/CD Dashboard provides a web interface for monitoring and controlling CI/C
 | GET | `/api/v1/pipelines` | List all pipelines (paginated) |
 | GET | `/api/v1/pipelines/{id}` | Pipeline details with steps |
 | POST | `/api/v1/pipelines` | Create new pipeline (manual trigger) |
+| POST | `/api/v1/webhooks/github` | Receive GitHub webhooks |
+| GET | `/api/v1/webhooks/events` | List webhook events (debug) |
+| GET | `/api/v1/webhooks/events/{id}` | Webhook event details |
 
 ### 4.4 Data Models
 
@@ -653,7 +656,43 @@ curl -X POST http://localhost:8081/api/v1/pipelines \
   -d '{"repo": "obtFusi/network-agent", "ref": "main", "trigger": "manual"}'
 ```
 
-### 4.6 Development
+### 4.6 GitHub Webhook Integration
+
+The dashboard receives GitHub webhooks to automatically trigger pipelines.
+
+**Supported Events:**
+
+| Event | Action | Pipeline Trigger |
+|-------|--------|------------------|
+| `issues` | `labeled` (status:ready) | New pipeline |
+| `pull_request` | `closed` + merged | PR merged pipeline |
+| `release` | `published` | Release pipeline |
+| `workflow_run` | `completed` | Update step status |
+
+**GitHub Webhook Setup:**
+
+1. Go to Repository Settings → Webhooks → Add webhook
+2. Configure:
+   ```
+   Payload URL: https://your-dashboard.example.com/api/v1/webhooks/github
+   Content type: application/json
+   Secret: <generate secure secret>
+   Events: Issues, Pull requests, Releases, Workflow runs
+   ```
+3. Set `GITHUB_WEBHOOK_SECRET` in dashboard environment
+
+**Local Testing:**
+
+```bash
+# Test webhook without signature (only when secret not configured)
+curl -X POST http://localhost:8081/api/v1/webhooks/github \
+  -H "Content-Type: application/json" \
+  -H "X-GitHub-Event: issues" \
+  -H "X-GitHub-Delivery: test-$(date +%s)" \
+  -d '{"action":"labeled","label":{"name":"status:ready"},"issue":{"number":1,"title":"Test"},"repository":{"full_name":"test/repo"}}'
+```
+
+### 4.7 Development
 
 ```bash
 cd infrastructure/cicd-dashboard
