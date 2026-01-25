@@ -22,13 +22,14 @@
 1. [Pipeline Overview](#1-pipeline-overview)
 2. [GitHub Actions Workflows](#2-github-actions-workflows)
 3. [Build Telemetry](#3-build-telemetry)
-4. [Local CI with act](#4-local-ci-with-act)
-5. [Branch Protection](#5-branch-protection)
-6. [Claude Code Integration](#6-claude-code-integration)
-7. [Project-specific Skills](#7-project-specific-skills)
-8. [Global Skills](#8-global-skills)
-9. [Workflow Diagrams](#9-workflow-diagrams)
-10. [Troubleshooting](#10-troubleshooting)
+4. [CI/CD Dashboard](#4-cicd-dashboard)
+5. [Local CI with act](#5-local-ci-with-act)
+6. [Branch Protection](#6-branch-protection)
+7. [Claude Code Integration](#7-claude-code-integration)
+8. [Project-specific Skills](#8-project-specific-skills)
+9. [Global Skills](#9-global-skills)
+10. [Workflow Diagrams](#10-workflow-diagrams)
+11. [Troubleshooting](#11-troubleshooting)
 
 ---
 
@@ -572,7 +573,104 @@ The system automatically identifies:
 
 ---
 
-## 4. Local CI with act
+## 4. CI/CD Dashboard
+
+The CI/CD Dashboard provides a web interface for monitoring and controlling CI/CD pipelines with approval gates.
+
+### 4.1 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         CI/CD DASHBOARD ARCHITECTURE                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  GitHub                  Dashboard Backend              Dashboard Frontend   │
+│  ┌──────────────┐       ┌──────────────────┐          ┌──────────────────┐  │
+│  │ Push/PR      │       │ FastAPI          │          │ React SPA        │  │
+│  │ Webhook      │──────▶│ ├─ /api/v1/...   │◀────────▶│ ├─ Pipeline List │  │
+│  │              │       │ ├─ /health       │   SSE    │ ├─ Step Details  │  │
+│  │ Actions      │       │ └─ SQLite DB     │          │ └─ Approvals     │  │
+│  │ (Runners)    │       └──────────────────┘          └──────────────────┘  │
+│  └──────────────┘               │                                           │
+│                                 ▼                                           │
+│                          ┌──────────────┐                                   │
+│                          │ Approval     │                                   │
+│                          │ Gates        │                                   │
+│                          └──────────────┘                                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 Components
+
+| Component | Path | Description |
+|-----------|------|-------------|
+| Backend | `infrastructure/cicd-dashboard/` | FastAPI + SQLite |
+| Compose | `infrastructure/docker/docker-compose.dashboard.yml` | Docker service |
+| CI | `.github/workflows/ci-dashboard.yml` | Lint, test, Docker build |
+
+### 4.3 API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check for Docker/K8s probes |
+| GET | `/api/v1/pipelines` | List all pipelines (paginated) |
+| GET | `/api/v1/pipelines/{id}` | Pipeline details with steps |
+| POST | `/api/v1/pipelines` | Create new pipeline (manual trigger) |
+
+### 4.4 Data Models
+
+**Pipeline States:**
+- `pending` - Pipeline created, not yet started
+- `running` - Pipeline execution in progress
+- `waiting_approval` - Blocked on approval gate
+- `completed` - All steps finished successfully
+- `failed` - One or more steps failed
+- `aborted` - Pipeline was cancelled
+
+**Step States:**
+- `pending` - Step not yet started
+- `running` - Step in progress
+- `completed` - Step finished successfully
+- `failed` - Step encountered error
+- `skipped` - Step skipped (dependency failed)
+
+### 4.5 Usage
+
+```bash
+# Start with dashboard (in addition to main services)
+docker compose -f docker-compose.yml -f docker-compose.dashboard.yml up -d
+
+# Check health
+curl http://localhost:8081/health
+
+# List pipelines
+curl http://localhost:8081/api/v1/pipelines
+
+# Create manual pipeline
+curl -X POST http://localhost:8081/api/v1/pipelines \
+  -H "Content-Type: application/json" \
+  -d '{"repo": "obtFusi/network-agent", "ref": "main", "trigger": "manual"}'
+```
+
+### 4.6 Development
+
+```bash
+cd infrastructure/cicd-dashboard
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run tests
+pytest -v
+
+# Run locally
+uvicorn app.main:app --reload --port 8081
+```
+
+---
+
+## 5. Local CI with act
 
 ### Installation
 
@@ -622,7 +720,7 @@ act push -v
 
 ---
 
-## 5. Branch Protection
+## 6. Branch Protection
 
 ### Required Status Checks
 
@@ -658,7 +756,7 @@ gh pr merge <N> --admin  # NEVER!
 
 ---
 
-## 6. Claude Code Integration
+## 7. Claude Code Integration
 
 ### Why Claude Code?
 
@@ -693,9 +791,9 @@ The project-specific `.claude/CLAUDE.md` defines:
 
 ---
 
-## 7. Project-specific Skills
+## 8. Project-specific Skills
 
-### 7.1 `/pr` - Pull Request Workflow
+### 8.1 `/pr` - Pull Request Workflow
 
 **Path:** `.claude/skills/pr/SKILL.md`
 **Trigger:** "create PR", "merge this"
@@ -731,7 +829,7 @@ Closes #N
 - **GitHub Actions red:** STOP, fix locally, push
 - **Never:** Skip steps, merge without green CI
 
-### 7.2 `/release` - Release Workflow
+### 8.2 `/release` - Release Workflow
 
 **Path:** `.claude/skills/release/SKILL.md`
 **Trigger:** "release", "new version", "create tag"
@@ -762,7 +860,7 @@ Closes #N
 - CHANGELOG.md MUST have entry for new version
 - Entry MUST have Added, Changed, or Fixed section
 
-### 7.3 `/merge-deps` - Dependabot Merge
+### 8.3 `/merge-deps` - Dependabot Merge
 
 **Path:** `.claude/skills/merge-deps/SKILL.md`
 **Trigger:** "merge dependabot", "update deps"
@@ -797,11 +895,11 @@ Local main synced to abc1234
 
 ---
 
-## 8. Global Skills
+## 9. Global Skills
 
 These skills are defined globally under `~/.claude/commands/` and available in ALL projects.
 
-### 8.1 `/impl-plan` - Implementation Plan
+### 9.1 `/impl-plan` - Implementation Plan
 
 **Path:** `~/.claude/commands/impl-plan.md`
 **Purpose:** Detailed plan before complex implementations
@@ -835,7 +933,7 @@ These skills are defined globally under `~/.claude/commands/` and available in A
 - **Gherkin Specs:** Acceptance criteria as Given/When/Then
 - **TodoWrite Items:** Automatic todo generation
 
-### 8.2 `/claudemd` - CLAUDE.md Generator
+### 9.2 `/claudemd` - CLAUDE.md Generator
 
 **Path:** `~/.claude/commands/claudemd.md`
 **Purpose:** Create optimal project-specific CLAUDE.md
@@ -878,7 +976,7 @@ These skills are defined globally under `~/.claude/commands/` and available in A
 
 ---
 
-## 9. Workflow Diagrams
+## 10. Workflow Diagrams
 
 ### Feature Development (End-to-End)
 
@@ -1003,7 +1101,7 @@ User: "Implement new feature X"
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### CI Fails
 

@@ -1,0 +1,34 @@
+# CI/CD Dashboard - Docker Compose Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dashboard.yml up -d
+#
+# Adds the CI/CD Dashboard service to the Network Agent stack.
+# The dashboard provides a web interface for monitoring and controlling
+# CI/CD pipelines with approval gates.
+
+services:
+  cicd-dashboard:
+    build:
+      context: ../cicd-dashboard
+      dockerfile: Dockerfile
+    container_name: cicd-dashboard
+    hostname: cicd-dashboard
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - dashboard-data:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///data/cicd.db
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+      - DEBUG=${DASHBOARD_DEBUG:-false}
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  dashboard-data:
