@@ -2,12 +2,16 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import Approval, ApprovalStatus, Pipeline, PipelineStatus, PipelineStep
+
+if TYPE_CHECKING:
+    from app.services.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +25,9 @@ class ApprovalError(Exception):
 class ApprovalService:
     """Service for managing approval requests."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, event_bus: "EventBus | None" = None):
         self.db = db
+        self.event_bus = event_bus
 
     async def request_approval(self, pipeline_id: str, step_id: str) -> Approval:
         """Create an approval request for a pipeline step.
@@ -85,6 +90,16 @@ class ApprovalService:
             step_id,
         )
 
+        # Publish event
+        if self.event_bus:
+            await self.event_bus.publish_approval_requested(
+                approval_id=approval.id,
+                pipeline_id=pipeline_id,
+                step_id=step_id,
+                step_name=step.name,
+                requested_at=approval.requested_at,
+            )
+
         return approval
 
     async def approve(
@@ -133,6 +148,16 @@ class ApprovalService:
             user,
             approval.pipeline_id,
         )
+
+        # Publish event
+        if self.event_bus:
+            await self.event_bus.publish_approval_resolved(
+                approval_id=approval_id,
+                pipeline_id=approval.pipeline_id,
+                status=ApprovalStatus.APPROVED.value,
+                responded_by=user,
+                responded_at=approval.responded_at,
+            )
 
         return True
 
@@ -192,6 +217,16 @@ class ApprovalService:
             approval.pipeline_id,
             reason,
         )
+
+        # Publish event
+        if self.event_bus:
+            await self.event_bus.publish_approval_resolved(
+                approval_id=approval_id,
+                pipeline_id=approval.pipeline_id,
+                status=ApprovalStatus.REJECTED.value,
+                responded_by=user,
+                responded_at=approval.responded_at,
+            )
 
         return True
 

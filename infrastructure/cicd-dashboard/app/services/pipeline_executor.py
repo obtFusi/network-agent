@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,9 @@ from app.models import (
 )
 from app.services.approval_service import ApprovalService
 from app.services.github_client import GitHubClient, WorkflowConclusion, WorkflowStatus
+
+if TYPE_CHECKING:
+    from app.services.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +112,12 @@ class PipelineExecutor:
         db: AsyncSession,
         github: GitHubClient | None = None,
         approval_service: ApprovalService | None = None,
+        event_bus: "EventBus | None" = None,
     ):
         self.db = db
         self.github = github or GitHubClient()
         self.approval_service = approval_service or ApprovalService(db)
+        self.event_bus = event_bus
         self._running_pipelines: dict[str, asyncio.Task] = {}
 
     async def start_pipeline(self, pipeline_id: str) -> Pipeline:
@@ -144,6 +149,13 @@ class PipelineExecutor:
         pipeline.status = PipelineStatus.RUNNING
 
         logger.info("Starting pipeline %s for %s", pipeline_id, pipeline.repo)
+
+        # Publish event
+        if self.event_bus:
+            await self.event_bus.publish_pipeline_updated(
+                pipeline_id=pipeline_id,
+                status=PipelineStatus.RUNNING.value,
+            )
 
         # Start execution in background task
         task = asyncio.create_task(self._execute_pipeline(pipeline_id))
@@ -188,6 +200,13 @@ class PipelineExecutor:
             step.status = StepStatus.SKIPPED
 
         logger.info("Aborted pipeline %s", pipeline_id)
+
+        # Publish event
+        if self.event_bus:
+            await self.event_bus.publish_pipeline_completed(
+                pipeline_id=pipeline_id,
+                status=PipelineStatus.ABORTED.value,
+            )
 
         return pipeline
 
@@ -270,6 +289,21 @@ class PipelineExecutor:
                 pipeline.completed_at = datetime.now(UTC)
                 await self.db.commit()
 
+                # Calculate duration
+                duration = None
+                if pipeline.created_at and pipeline.completed_at:
+                    duration = (
+                        pipeline.completed_at - pipeline.created_at
+                    ).total_seconds()
+
+                # Publish event
+                if self.event_bus:
+                    await self.event_bus.publish_pipeline_completed(
+                        pipeline_id=pipeline_id,
+                        status=PipelineStatus.COMPLETED.value,
+                        duration_seconds=duration,
+                    )
+
             logger.info("Pipeline %s completed successfully", pipeline_id)
 
         except asyncio.CancelledError:
@@ -287,6 +321,13 @@ class PipelineExecutor:
             if pipeline:
                 pipeline.status = PipelineStatus.FAILED
                 await self.db.commit()
+
+                # Publish event
+                if self.event_bus:
+                    await self.event_bus.publish_pipeline_completed(
+                        pipeline_id=pipeline_id,
+                        status=PipelineStatus.FAILED.value,
+                    )
 
         finally:
             if pipeline_id in self._running_pipelines:
@@ -357,6 +398,15 @@ class PipelineExecutor:
         step.started_at = datetime.now(UTC)
         await self.db.commit()
 
+        # Publish step started event
+        if self.event_bus:
+            await self.event_bus.publish_step_started(
+                pipeline_id=pipeline_id,
+                step_id=step.id,
+                name=step.name,
+                stage=stage.name,
+            )
+
         try:
             # Execute based on step type
             if step_def.step_type == StepType.WORKFLOW:
@@ -369,6 +419,21 @@ class PipelineExecutor:
             step.completed_at = datetime.now(UTC)
             await self.db.commit()
 
+            # Calculate duration
+            duration = None
+            if step.started_at and step.completed_at:
+                duration = (step.completed_at - step.started_at).total_seconds()
+
+            # Publish step completed event
+            if self.event_bus:
+                await self.event_bus.publish_step_completed(
+                    pipeline_id=pipeline_id,
+                    step_id=step.id,
+                    name=step.name,
+                    status=StepStatus.COMPLETED.value,
+                    duration_seconds=duration,
+                )
+
             logger.info(
                 "Step '%s' completed for pipeline %s",
                 step_def.name,
@@ -380,6 +445,17 @@ class PipelineExecutor:
             step.completed_at = datetime.now(UTC)
             step.error = str(e)
             await self.db.commit()
+
+            # Publish step failed event
+            if self.event_bus:
+                await self.event_bus.publish_step_completed(
+                    pipeline_id=pipeline_id,
+                    step_id=step.id,
+                    name=step.name,
+                    status=StepStatus.FAILED.value,
+                    error=str(e),
+                )
+
             raise
 
     async def _wait_for_approval(self, pipeline_id: str, step: PipelineStep) -> None:
