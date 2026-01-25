@@ -1,73 +1,73 @@
 # CI/CD - Network Agent
 
-**Letzte Aktualisierung:** 2026-01-24
+**Last Updated:** 2026-01-25
 **Status:** Production
-**SSOT für:** CI/CD-Pipeline, Workflow-Automation, Claude Code Integration
+**SSOT for:** CI/CD Pipeline, Workflow Automation, Claude Code Integration
 
 ---
 
 ## TL;DR
 
 - **GitHub Actions:** 8 Workflows (CI, Release, CodeQL, Auto-Label, PR-Lint, Appliance-Build, Docker-Build, OVA-Build)
-- **Lokale CI:** `act push` führt alle 4 Required Checks aus
+- **Local CI:** `act push` runs all 4 Required Checks
 - **Branch Protection:** 4 Required Status Checks (lint, test, security, docker)
-- **Claude Code Skills:** `/pr`, `/release`, `/merge-deps` für automatisierte Workflows
-- **Globale Skills:** `/claudemd`, `/impl-plan` für Planung und Projekt-Setup
-- **Merge-Regel:** NIEMALS `--admin`, IMMER `--auto` (wartet auf Checks)
+- **Claude Code Skills:** `/pr`, `/release`, `/merge-deps` for automated workflows
+- **Global Skills:** `/claudemd`, `/impl-plan` for planning and project setup
+- **Merge Rule:** NEVER `--admin`, ALWAYS `--auto` (waits for checks)
 
 ---
 
-## Inhaltsverzeichnis
+## Table of Contents
 
-1. [Pipeline-Übersicht](#1-pipeline-übersicht)
+1. [Pipeline Overview](#1-pipeline-overview)
 2. [GitHub Actions Workflows](#2-github-actions-workflows)
-3. [Build-Telemetrie](#3-build-telemetrie)
-4. [Lokale CI mit act](#4-lokale-ci-mit-act)
+3. [Build Telemetry](#3-build-telemetry)
+4. [Local CI with act](#4-local-ci-with-act)
 5. [Branch Protection](#5-branch-protection)
 6. [Claude Code Integration](#6-claude-code-integration)
-7. [Projekt-spezifische Skills](#7-projekt-spezifische-skills)
-8. [Globale Skills](#8-globale-skills)
-9. [Workflow-Diagramme](#9-workflow-diagramme)
+7. [Project-specific Skills](#7-project-specific-skills)
+8. [Global Skills](#8-global-skills)
+9. [Workflow Diagrams](#9-workflow-diagrams)
 10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
-## 1. Pipeline-Übersicht
+## 1. Pipeline Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           NETWORK AGENT CI/CD                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  LOKAL (Entwickler)              GITHUB (Remote)           RELEASE         │
+│  LOCAL (Developer)                 GITHUB (Remote)           RELEASE        │
 │  ┌──────────────────┐           ┌──────────────────┐      ┌─────────────┐  │
-│  │ 1. Code schreiben│           │ 5. PR erstellen  │      │ 8. Tag push │  │
-│  │ 2. act push      │──push──►  │ 6. CI läuft      │      │ 9. Release  │  │
-│  │ 3. Docker build  │           │ 7. Merge (--auto)│──►   │    erstellt │  │
-│  │ 4. Manuell testen│           └──────────────────┘      └─────────────┘  │
+│  │ 1. Write code    │           │ 5. Create PR     │      │ 8. Tag push │  │
+│  │ 2. act push      │──push──►  │ 6. CI runs       │      │ 9. Release  │  │
+│  │ 3. Docker build  │           │ 7. Merge (--auto)│──►   │    created  │  │
+│  │ 4. Manual test   │           └──────────────────┘      └─────────────┘  │
 │  └──────────────────┘                                                       │
 │         │                                │                                   │
 │         ▼                                ▼                                   │
 │  ┌──────────────────┐           ┌──────────────────┐                        │
 │  │ /impl-plan       │           │ /pr Skill        │                        │
 │  │ /claudemd        │           │ /release Skill   │                        │
-│  │ (Planung)        │           │ /merge-deps      │                        │
+│  │ (Planning)       │           │ /merge-deps      │                        │
 │  └──────────────────┘           └──────────────────┘                        │
 │                                                                             │
 │  ═══════════════════════════════════════════════════════════════════════   │
-│  CLAUDE CODE INTEGRATION: Skills automatisieren jeden Schritt              │
+│  CLAUDE CODE INTEGRATION: Skills automate every step                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Architektur-Prinzipien
+### Architecture Principles
 
-| Prinzip | Beschreibung |
-|---------|--------------|
-| **Fail Fast** | Lint vor Tests, Tests vor Security, alles vor Docker |
-| **Required Checks** | 4 Jobs müssen grün sein bevor Merge möglich |
-| **Lokal = Remote** | `act push` simuliert GitHub Actions exakt |
-| **Skill-First** | Claude Code Skills statt manuelle CLI-Befehle |
-| **Evidence-Pflicht** | Kein Merge ohne dokumentierte Tests |
+| Principle | Description |
+|-----------|-------------|
+| **Fail Fast** | Lint before tests, tests before security, everything before Docker |
+| **Required Checks** | 4 jobs must be green before merge is allowed |
+| **Local = Remote** | `act push` simulates GitHub Actions exactly |
+| **Skill-First** | Claude Code skills instead of manual CLI commands |
+| **Evidence Required** | No merge without documented tests |
 
 ---
 
@@ -75,24 +75,24 @@
 
 ### 2.1 CI Workflow (`.github/workflows/ci.yml`)
 
-**Trigger:** Push und PR auf `main`
-**Concurrency:** Nur ein Workflow pro Branch gleichzeitig
+**Trigger:** Push and PR on `main`
+**Concurrency:** Only one workflow per branch at a time
 
 ```yaml
 jobs:
   lint:        # Ruff Format + Check + Bidi-Scan
-  test:        # pytest mit Coverage (needs: lint)
-  security:    # pip-audit auf requirements.txt (needs: lint)
+  test:        # pytest with Coverage (needs: lint)
+  security:    # pip-audit on requirements.txt (needs: lint)
   docker:      # Build + Smoke-Test + Trivy (needs: lint, test, security)
 ```
 
 #### Job: lint
 
-| Schritt | Beschreibung |
-|---------|--------------|
-| `ruff format --check .` | Code-Formatierung prüfen |
-| `ruff check agent/ tools/ cli.py` | Linting (Fehler, Warnungen) |
-| Bidi-Check | Unicode-Trojaner erkennen (CVE-2021-42574) |
+| Step | Description |
+|------|-------------|
+| `ruff format --check .` | Check code formatting |
+| `ruff check agent/ tools/ cli.py` | Linting (errors, warnings) |
+| Bidi-Check | Detect Unicode trojans (CVE-2021-42574) |
 
 **Bidi-Check Details:**
 ```bash
@@ -101,7 +101,7 @@ grep -rP '[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]' \
   --include='*.md' --include='Dockerfile*' .
 ```
 
-Scannt nach versteckten Unicode-Zeichen die Code-Injection ermöglichen könnten.
+Scans for hidden Unicode characters that could enable code injection.
 
 #### Job: test
 
@@ -109,7 +109,7 @@ Scannt nach versteckten Unicode-Zeichen die Code-Injection ermöglichen könnten
 pytest --cov=agent --cov=tools --cov-report=term-missing
 ```
 
-Coverage für `agent/` und `tools/` Verzeichnisse.
+Coverage for `agent/` and `tools/` directories.
 
 #### Job: security
 
@@ -117,48 +117,48 @@ Coverage für `agent/` und `tools/` Verzeichnisse.
 pip-audit -r requirements.txt
 ```
 
-Prüft alle Dependencies auf bekannte Vulnerabilities.
+Checks all dependencies for known vulnerabilities.
 
 #### Job: docker
 
-| Schritt | Beschreibung |
-|---------|--------------|
-| `docker build -t network-agent:ci .` | Image bauen |
-| `docker run --rm network-agent:ci python cli.py --version` | Smoke-Test |
-| Trivy Scanner | Container-Vulnerabilities (CRITICAL, HIGH) |
+| Step | Description |
+|------|-------------|
+| `docker build -t network-agent:ci .` | Build image |
+| `docker run --rm network-agent:ci python cli.py --version` | Smoke test |
+| Trivy Scanner | Container vulnerabilities (CRITICAL, HIGH) |
 
-**Trivy Konfiguration:**
+**Trivy Configuration:**
 ```yaml
 - uses: aquasecurity/trivy-action@0.28.0
   with:
     severity: 'CRITICAL,HIGH'
-    ignore-unfixed: true  # Base-Image CVEs ohne Fix ignorieren
+    ignore-unfixed: true  # Ignore base image CVEs without fix
 ```
 
 ### 2.2 Release Workflow (`.github/workflows/release.yml`)
 
-**Trigger:** Tag-Push (`v*`)
-**Aktion:** Automatisches GitHub Release aus CHANGELOG
+**Trigger:** Tag push (`v*`)
+**Action:** Automatic GitHub Release from CHANGELOG
 
 ```yaml
 steps:
   - Extract version from tag      # v0.8.0 → 0.8.0
-  - Extract changelog for version # CHANGELOG.md parsen
+  - Extract changelog for version # Parse CHANGELOG.md
   - Create GitHub Release         # softprops/action-gh-release@v2
 ```
 
-**CHANGELOG-Parsing:**
+**CHANGELOG Parsing:**
 ```bash
 awk "/^## \[${VERSION_NUM}\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md
 ```
 
-Extrahiert den Abschnitt zwischen `## [X.Y.Z]` und dem nächsten `## [`.
+Extracts the section between `## [X.Y.Z]` and the next `## [`.
 
 ### 2.3 CodeQL Workflow (`.github/workflows/codeql.yml`)
 
-**Trigger:** Push, PR auf `main`, wöchentlich (Sonntag 00:00 UTC)
-**Sprache:** Python
-**Zweck:** Statische Code-Analyse für Security-Vulnerabilities
+**Trigger:** Push, PR on `main`, weekly (Sunday 00:00 UTC)
+**Language:** Python
+**Purpose:** Static code analysis for security vulnerabilities
 
 ```yaml
 - uses: github/codeql-action/init@v4
@@ -169,21 +169,21 @@ Extrahiert den Abschnitt zwischen `## [X.Y.Z]` und dem nächsten `## [`.
 
 ### 2.4 Auto-Label Workflow (`.github/workflows/auto-label.yml`)
 
-**Trigger:** Issue/PR erstellt
+**Trigger:** Issue/PR created
 
-#### Issue-Labels (automatisch)
+#### Issue Labels (automatic)
 
-| Titel enthält | Labels |
-|---------------|--------|
+| Title contains | Labels |
+|----------------|--------|
 | `[bug]`, `bug:`, `fix:` | `type:bug`, `priority:high` |
 | `[feature]`, `feat:` | `type:feature` |
 | `[docs]`, `docs:` | `type:docs` |
 | `[refactor]`, `refactor:` | `type:refactor` |
 | `[ci]`, `ci:` | `type:ci` |
 
-Alle Issues bekommen automatisch `status:backlog`.
+All issues automatically get `status:backlog`.
 
-#### PR-Labels (automatisch)
+#### PR Labels (automatic)
 
 | Prefix | Label |
 |--------|-------|
@@ -191,27 +191,27 @@ Alle Issues bekommen automatisch `status:backlog`.
 | `fix:`, `fix(` | `type:bug` |
 | `docs:`, `docs(` | `type:docs` |
 | `deps:`, `chore(deps)` | `type:deps` |
-| Autor `dependabot[bot]` | `type:deps` |
+| Author `dependabot[bot]` | `type:deps` |
 
 ### 2.5 PR-Lint Workflow (`.github/workflows/pr-lint.yml`)
 
 **Trigger:** PR opened, edited, synchronize
-**Zweck:** Conventional Commits durchsetzen (soft enforcement)
+**Purpose:** Enforce Conventional Commits (soft enforcement)
 
 ```yaml
 types: |
   feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, deps
 ignoreLabels: |
-  type:deps  # Dependabot-PRs erlauben "Bump X from Y to Z"
+  type:deps  # Allow Dependabot PRs with "Bump X from Y to Z"
 ```
 
-**Wichtig:** NICHT als Required Check konfiguriert (Dependabot-Kompatibilität).
+**Important:** NOT configured as Required Check (Dependabot compatibility).
 
 ### 2.6 Appliance Build Workflow
 
-**Architektur:** Zwei-Tier Build (Base Image + Appliance Layer)
+**Architecture:** Two-Tier Build (Base Image + Appliance Layer)
 **Runner:** Self-hosted (Proxmox LXC)
-**Artifact Storage:** MinIO (LAN) für schnellen Inter-Job Transfer
+**Artifact Storage:** MinIO (LAN) for fast inter-job transfer
 
 #### Two-Tier Build Architecture
 
@@ -220,56 +220,102 @@ ignoreLabels: |
 │                    TWO-TIER APPLIANCE BUILD                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  BASE IMAGE (selten bauen, ~40 min)                             │
+│  BASE IMAGE (build rarely, ~40 min)                             │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │ • Debian 13 (Trixie) + Docker CE                           │ │
 │  │ • systemd-networkd + SSH Hardening + Kernel Tuning         │ │
-│  │ • Ollama + qwen3:30b-a3b Model (~20 GB)                    │ │
-│  │ → Speichern in MinIO: appliance-base/                       │ │
+│  │ • Ollama + PRE-BAKED MODELS via virtio-9p (~36 GB)         │ │
+│  │ → Store in MinIO: appliance-base/                          │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                              ↓                                   │
-│  APPLIANCE LAYER (pro Release, ~5 min)                          │
+│  APPLIANCE LAYER (per release, ~5 min)                          │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │ • /opt/network-agent/ (Docker Compose Files)               │ │
-│  │ • Docker Images (ghcr.io) für Offline-Betrieb              │ │
+│  │ • Docker Images (ghcr.io) for offline operation            │ │
 │  │ • First-boot Setup + Firewall Rules                        │ │
-│  │ • Version-spezifische Konfiguration                        │ │
+│  │ • Version-specific Configuration                           │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                              ↓                                   │
 │              network-agent-0.10.1.qcow2 → GitHub Release        │
 │                                                                  │
-│  USER STARTET VM → FERTIGE APPLIANCE (keine Internet nötig!)    │
+│  USER STARTS VM → READY APPLIANCE (no internet needed!)         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Vorteile:**
-- Release-Builds: ~5 min statt ~40 min
-- Keine Debian-Installation pro Release
-- Keine Ollama-Model-Transfers pro Release
-- Einfacheres Debugging (Base vs. App Layer getrennt)
+**Benefits:**
+- Release builds: ~5 min instead of ~40 min
+- No Debian installation per release
+- No Ollama model transfers per release
+- Easier debugging (Base vs. App layer separated)
+
+#### Pre-baked Ollama Models (virtio-9p)
+
+Ollama models are baked directly into the base image instead of copied at runtime:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    PRE-BAKED MODELS APPROACH                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  RUNNER (Host)                      PACKER VM (Guest)            │
+│  ┌─────────────────┐               ┌─────────────────┐          │
+│  │ /opt/ollama-cache/              │ /mnt/host-cache/ │          │
+│  │   models/       │───virtio-9p──▶│   (read-only)    │          │
+│  │   ├── blobs/    │               │                  │          │
+│  │   └── manifests/│               │       ↓ cp -r    │          │
+│  └─────────────────┘               │                  │          │
+│                                    │ /usr/share/ollama│          │
+│                                    │   /.ollama/models│          │
+│                                    └─────────────────┘          │
+│                                                                  │
+│  Result: Models baked directly into qcow2 image                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Cache Format:**
+- **Old (tar.zst):** Compress → Transfer → Extract (60GB I/O)
+- **New (Directory):** Direct copy via virtio-9p (20GB I/O)
+
+**Benefits:**
+- 3x less I/O (no compression/extraction)
+- Faster build (~14 min for model copy)
+- Simpler workflow (fewer steps)
+
+**Cache Directory on Runner:**
+```
+/opt/ollama-cache/
+└── models/           # Extracted Ollama models (36GB)
+    ├── blobs/        # Model files
+    └── manifests/    # Model metadata
+```
+
+**When to rebuild cache?**
+- Ollama model change (e.g., qwen3:30b-a3b → llama3:70b)
+- Ollama major version update
+- Cache corruption (rm -rf /opt/ollama-cache/models/)
 
 #### Workflows
 
-**1. Base Image Build (selten, nur bei System-Änderungen):**
+**1. Base Image Build (rare, only for system changes):**
 
 ```bash
-# Base Image bauen (Debian + Docker + Ollama)
+# Build base image (Debian + Docker + Ollama)
 gh workflow run appliance-base-build.yml -f ollama_model=qwen3:30b-a3b
 ```
 
-Wann neu bauen?
-- Debian-Version Upgrade (13.3 → 13.4)
-- Docker Major Update
-- Ollama Model-Wechsel
-- Kernel/SSH/Network-Konfigurationsänderungen
+When to rebuild?
+- Debian version upgrade (13.3 → 13.4)
+- Docker major update
+- Ollama model change
+- Kernel/SSH/Network configuration changes
 
-**2. Appliance Build (pro Release):**
+**2. Appliance Build (per release):**
 
 ```bash
-# Appliance bauen (nutzt Base Image)
+# Build appliance (uses base image)
 gh workflow run appliance-build.yml -f version=0.10.1
 
-# Mit spezifischem Base Image
+# With specific base image
 gh workflow run appliance-build.yml -f version=0.10.1 -f base_image=debian-docker-ollama-20260125.qcow2
 ```
 
@@ -293,10 +339,10 @@ gh workflow run appliance-build.yml -f version=0.10.1 -f base_image=debian-docke
 appliance-base/
 ├── debian-docker-ollama-20260125.qcow2     # Base Image
 ├── debian-docker-ollama-20260125.qcow2.sha256
-└── (ältere Base Images für Rollback)
+└── (older base images for rollback)
 
 appliance-builds/
-└── {version}/                              # Temp, auto-cleanup nach E2E
+└── {version}/                              # Temp, auto-cleanup after E2E
     ├── network-agent-0.10.1.qcow2.part-aa
     ├── network-agent-0.10.1.qcow2.part-ab
     ├── ...
@@ -305,8 +351,8 @@ appliance-builds/
 
 **MinIO Artifact Storage:**
 
-| Aspekt | Wert |
-|--------|------|
+| Aspect | Value |
+|--------|-------|
 | Server | 10.0.0.165:9000 (Proxmox LXC 160) |
 | Bucket | `appliance-builds` (temp, auto-cleanup) |
 | Transfer Speed | ~100 MB/s (LAN) vs ~5 MB/s (GitHub Artifacts) |
@@ -323,21 +369,21 @@ appliance-builds/
 
 ### 2.7 Docker Build Workflow (`.github/workflows/docker-build.yml`)
 
-**Trigger:** Push auf `main` (bei Änderungen an Dockerfile, Code, Config) oder `workflow_dispatch`
-**Zweck:** Docker Image zu ghcr.io pushen
+**Trigger:** Push on `main` (when Dockerfile, Code, Config change) or `workflow_dispatch`
+**Purpose:** Push Docker image to ghcr.io
 
 ```yaml
-# Manuell triggern mit Version
+# Manually trigger with version
 gh workflow run docker-build.yml -f version=0.9.0
 ```
 
-**Schritte:**
+**Steps:**
 
-| Schritt | Beschreibung |
-|---------|--------------|
-| Login to ghcr.io | Mit GITHUB_TOKEN authentifizieren |
-| Extract metadata | Version aus cli.py oder Input |
-| Build and push | Multi-Tag: `version` + `latest` |
+| Step | Description |
+|------|-------------|
+| Login to ghcr.io | Authenticate with GITHUB_TOKEN |
+| Extract metadata | Version from cli.py or Input |
+| Build and push | Multi-tag: `version` + `latest` |
 
 **Tags:**
 - `ghcr.io/obtfusi/network-agent:0.9.0`
@@ -348,8 +394,8 @@ gh workflow run docker-build.yml -f version=0.9.0
 **Location:** Proxmox LXC 150 (`github-runner`)
 **Host:** 10.0.0.69 (Proxmox)
 
-| Ressource | Wert |
-|-----------|------|
+| Resource | Value |
+|----------|-------|
 | OS | Debian 13 |
 | RAM | 32 GB |
 | CPU | 8 Cores |
@@ -357,27 +403,27 @@ gh workflow run docker-build.yml -f version=0.9.0
 | Labels | `self-hosted`, `Linux`, `X64`, `ova-builder` |
 
 **Security (Public Repo!):**
-- **Ephemeral Mode:** Runner re-registriert nach jedem Job
-- **Trigger-Restriction:** NUR `workflow_dispatch` + `release`, NIEMALS `pull_request`
-- **Dedicated User:** Läuft als `runner`, nicht als root
-- **PAT in .env:** Token nicht im systemd-Service gespeichert
+- **Ephemeral Mode:** Runner re-registers after each job
+- **Trigger Restriction:** ONLY `workflow_dispatch` + `release`, NEVER `pull_request`
+- **Dedicated User:** Runs as `runner`, not as root
+- **PAT in .env:** Token not stored in systemd service
 
 **Management:**
 
 ```bash
-# Runner Status prüfen
+# Check runner status
 ssh root@github-runner systemctl status github-runner
 
-# Logs anzeigen
+# View logs
 ssh root@github-runner journalctl -u github-runner -f
 
-# Runner in GitHub prüfen
+# Check runner in GitHub
 gh api /repos/obtFusi/network-agent/actions/runners --jq '.runners[]'
 ```
 
 **Scripts:**
-- `infrastructure/scripts/create-runner-lxc.sh` - LXC Setup auf Proxmox
-- `infrastructure/scripts/runner-wrapper.sh` - Ephemeral Loop mit Token-Refresh
+- `infrastructure/scripts/create-runner-lxc.sh` - LXC setup on Proxmox
+- `infrastructure/scripts/runner-wrapper.sh` - Ephemeral loop with token refresh
 
 ### 2.9 MinIO Artifact Storage
 
@@ -385,103 +431,103 @@ gh api /repos/obtFusi/network-agent/actions/runners --jq '.runners[]'
 **IP:** 10.0.0.165
 **Ports:** 9000 (API), 9001 (Console)
 
-| Ressource | Wert |
-|-----------|------|
+| Resource | Value |
+|----------|-------|
 | OS | Debian 12 |
 | RAM | 2 GB |
 | CPU | 2 Cores |
 | Disk | 50 GB |
-| Bucket | `appliance-builds` (temp, auto-cleanup nach E2E) |
+| Bucket | `appliance-builds` (temp, auto-cleanup after E2E) |
 
-**Warum MinIO statt GitHub Artifacts?**
+**Why MinIO instead of GitHub Artifacts?**
 
-| Aspekt | GitHub Artifacts | MinIO |
+| Aspect | GitHub Artifacts | MinIO |
 |--------|------------------|-------|
 | Upload Speed | ~5 MB/s (Rate-Limited) | ~100 MB/s (LAN) |
 | 27 GB Upload | ~75 min | ~5 min |
-| Kosten | Gratis (2 GB limit) | Gratis (self-hosted) |
-| Kontrolle | GitHub managed | Selbst verwaltet |
+| Cost | Free (2 GB limit) | Free (self-hosted) |
+| Control | GitHub managed | Self-managed |
 
 **Management:**
 
 ```bash
-# MinIO Status prüfen
+# Check MinIO status
 ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"
 
-# Bucket-Inhalt anzeigen
+# View bucket contents
 ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-builds/"
 
-# Manuelles Cleanup
+# Manual cleanup
 ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc rm --recursive --force local/appliance-builds/OLD_VERSION/"
 
 # Console (Web UI)
-# http://10.0.0.165:9001 (minioadmin / [siehe Secrets])
+# http://10.0.0.165:9001 (minioadmin / [see Secrets])
 ```
 
 **Troubleshooting:**
 
-| Problem | Lösung |
-|---------|--------|
-| MinIO nicht erreichbar | `pct start 160` auf Proxmox |
-| Upload fehlschlägt | Secrets prüfen, Netzwerk testen |
-| Bucket voll | `mc rm --recursive minio/appliance-builds/OLD_VERSION/` |
-| Credentials vergessen | `ssh root@10.0.0.69 "pct exec 160 -- cat /etc/minio.env"` |
+| Problem | Solution |
+|---------|----------|
+| MinIO not reachable | `pct start 160` on Proxmox |
+| Upload fails | Check secrets, test network |
+| Bucket full | `mc rm --recursive minio/appliance-builds/OLD_VERSION/` |
+| Credentials forgotten | `ssh root@10.0.0.69 "pct exec 160 -- cat /etc/minio.env"` |
 
 ---
 
-## 3. Build-Telemetrie
+## 3. Build Telemetry
 
-Das Telemetrie-System trackt detaillierte Metriken für jeden Build-Schritt zur Optimierung.
+The telemetry system tracks detailed metrics for each build step for optimization.
 
-### 3.1 Was wird gemessen?
+### 3.1 What is measured?
 
-| Metrik | Beschreibung |
-|--------|--------------|
-| **Duration** | Zeit in Sekunden pro Step |
-| **CPU%** | Durchschnittliche CPU-Auslastung |
-| **Memory** | RAM-Verbrauch (absolut + Delta) |
-| **Disk Read/Write** | MB gelesen/geschrieben + IOPS |
-| **Network RX/TX** | MB empfangen/gesendet + Rate |
+| Metric | Description |
+|--------|-------------|
+| **Duration** | Time in seconds per step |
+| **CPU%** | Average CPU utilization |
+| **Memory** | RAM usage (absolute + delta) |
+| **Disk Read/Write** | MB read/written + IOPS |
+| **Network RX/TX** | MB received/sent + rate |
 
-### 3.2 Telemetrie-Komponenten
+### 3.2 Telemetry Components
 
-| Komponente | Pfad | Zweck |
-|------------|------|-------|
-| GitHub Actions Telemetry | `infrastructure/scripts/telemetry.sh` | Workflow-Steps tracken |
-| Packer Telemetry | `infrastructure/packer/scripts/packer-telemetry.sh` | Provisioner-Steps tracken |
-| Report Tool | `infrastructure/scripts/telemetry-report.sh` | Historische Daten auswerten |
+| Component | Path | Purpose |
+|-----------|------|---------|
+| GitHub Actions Telemetry | `infrastructure/scripts/telemetry.sh` | Track workflow steps |
+| Packer Telemetry | `infrastructure/packer/scripts/packer-telemetry.sh` | Track provisioner steps |
+| Report Tool | `infrastructure/scripts/telemetry-report.sh` | Analyze historical data |
 
-### 3.3 Persistente Speicherung
+### 3.3 Persistent Storage
 
-Telemetrie-Daten werden in MinIO gespeichert:
+Telemetry data is stored in MinIO:
 
 ```
 appliance-telemetry/
-├── latest/                     # Schnellzugriff auf aktuelle Builds
+├── latest/                     # Quick access to current builds
 │   ├── build_0.10.1.json
 │   └── e2e_0.10.1.json
-└── {version}/{timestamp}/      # Vollständige Historie
+└── {version}/{timestamp}/      # Complete history
     ├── build_telemetry.json
     └── e2e_telemetry.json
 ```
 
-### 3.4 Verwendung
+### 3.4 Usage
 
 ```bash
-# Aktuellste Build-Telemetrie anzeigen
+# Show latest build telemetry
 ./infrastructure/scripts/telemetry-report.sh latest
 
-# Alle verfügbaren Telemetrie-Daten auflisten
+# List all available telemetry data
 ./infrastructure/scripts/telemetry-report.sh list
 
-# Zwei Versionen vergleichen
+# Compare two versions
 ./infrastructure/scripts/telemetry-report.sh compare 0.10.1 0.10.2
 
-# Letzte N Builds anzeigen
+# Show last N builds
 ./infrastructure/scripts/telemetry-report.sh history 5
 ```
 
-### 3.5 Output-Beispiel
+### 3.5 Output Example
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════╗
@@ -503,30 +549,30 @@ Bottleneck Analysis:
   Peak memory: Step7c_Ollama_Install: 8192MB
 ```
 
-### 3.6 Bottleneck-Erkennung
+### 3.6 Bottleneck Detection
 
-Das System identifiziert automatisch:
+The system automatically identifies:
 
-| Bottleneck | Indikator | Typische Ursache |
-|------------|-----------|------------------|
-| **CPU-Bound** | CPU > 80% | Kompilierung, Model-Loading |
-| **I/O-Bound** | Disk Write > 100 MB/s | Extraktion, Image-Build |
-| **Network-Bound** | Net RX > 50 MB/s | Model Download, Docker Pull |
-| **Memory Pressure** | Memory Delta > 4GB | Ollama Model Loading |
+| Bottleneck | Indicator | Typical Cause |
+|------------|-----------|---------------|
+| **CPU-Bound** | CPU > 80% | Compilation, model loading |
+| **I/O-Bound** | Disk Write > 100 MB/s | Extraction, image build |
+| **Network-Bound** | Net RX > 50 MB/s | Model download, Docker pull |
+| **Memory Pressure** | Memory Delta > 4GB | Ollama model loading |
 
-### 3.7 Umgebungsvariablen
+### 3.7 Environment Variables
 
-| Variable | Default | Beschreibung |
-|----------|---------|--------------|
-| `TELEMETRY_DIR` | `/tmp/telemetry` | Lokales Verzeichnis für JSON-Daten |
-| `TELEMETRY_BUCKET` | `appliance-telemetry` | MinIO Bucket Name |
-| `MINIO_ENDPOINT` | (Secret) | MinIO Server URL |
-| `MINIO_ACCESS_KEY` | (Secret) | MinIO Access Key |
-| `MINIO_SECRET_KEY` | (Secret) | MinIO Secret Key |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TELEMETRY_DIR` | `/tmp/telemetry` | Local directory for JSON data |
+| `TELEMETRY_BUCKET` | `appliance-telemetry` | MinIO bucket name |
+| `MINIO_ENDPOINT` | (Secret) | MinIO server URL |
+| `MINIO_ACCESS_KEY` | (Secret) | MinIO access key |
+| `MINIO_SECRET_KEY` | (Secret) | MinIO secret key |
 
 ---
 
-## 4. Lokale CI mit act
+## 4. Local CI with act
 
 ### Installation
 
@@ -537,42 +583,42 @@ pacman -S act
 # macOS
 brew install act
 
-# Oder via Go
+# Or via Go
 go install github.com/nektos/act@latest
 ```
 
-### Konfiguration (`.actrc`)
+### Configuration (`.actrc`)
 
 ```
 --workflows=.github/workflows/ci.yml
 ```
 
-Führt nur den CI-Workflow aus, nicht Release/CodeQL (die benötigen Secrets/Triggers).
+Runs only the CI workflow, not Release/CodeQL (which require secrets/triggers).
 
-### Verwendung
+### Usage
 
 ```bash
-# Alle 4 Jobs ausführen
+# Run all 4 jobs
 act push
 
-# Nur einen Job
+# Only one job
 act push -j lint
 act push -j docker
 
-# Mit Verbose-Output
+# With verbose output
 act push -v
 ```
 
-### Was `act push` testet
+### What `act push` tests
 
-| Job | Lokaler Output |
-|-----|----------------|
+| Job | Local Output |
+|-----|--------------|
 | lint | `ruff format --check .` + `ruff check` |
-| test | `pytest` mit Coverage |
+| test | `pytest` with coverage |
 | security | `pip-audit` |
-| docker | `docker build` + Smoke-Test |
+| docker | `docker build` + smoke test |
 
-**Wichtig:** Trivy läuft bei `act` nur eingeschränkt (keine Action-spezifischen Features).
+**Important:** Trivy runs with limitations in `act` (no action-specific features).
 
 ---
 
@@ -580,81 +626,81 @@ act push -v
 
 ### Required Status Checks
 
-Konfiguriert unter: Repository → Settings → Branches → `main`
+Configured under: Repository → Settings → Branches → `main`
 
-| Check | Job | Muss grün sein |
-|-------|-----|----------------|
+| Check | Job | Must be green |
+|-------|-----|---------------|
 | lint | CI / lint | ✓ |
 | test | CI / test | ✓ |
 | security | CI / security | ✓ |
 | docker | CI / docker | ✓ |
 
-### Merge-Regeln
+### Merge Rules
 
-| Regel | Einstellung |
-|-------|-------------|
-| Require pull request | Ja |
-| Require approvals | Nein (Solo-Projekt) |
-| Require status checks | Ja (4 Jobs) |
-| Require conversation resolution | Nein |
-| Require linear history | Nein |
-| Include administrators | Ja |
+| Rule | Setting |
+|------|---------|
+| Require pull request | Yes |
+| Require approvals | No (solo project) |
+| Require status checks | Yes (4 jobs) |
+| Require conversation resolution | No |
+| Require linear history | No |
+| Include administrators | Yes |
 
-### Merge-Strategie
+### Merge Strategy
 
 ```bash
-# RICHTIG: Wartet auf alle Checks
+# CORRECT: Waits for all checks
 gh pr merge <N> --merge --delete-branch --auto
 
-# FALSCH: Umgeht Branch Protection!
-gh pr merge <N> --admin  # NIEMALS!
+# WRONG: Bypasses Branch Protection!
+gh pr merge <N> --admin  # NEVER!
 ```
 
 ---
 
 ## 6. Claude Code Integration
 
-### Warum Claude Code?
+### Why Claude Code?
 
-Network Agent wurde von Anfang an für KI-gestützte Entwicklung konzipiert:
+Network Agent was designed from the start for AI-assisted development:
 
-1. **Skill-basierte Automation:** Wiederkehrende Workflows als Skills
-2. **Evidence-Pflicht:** Keine Merge-Claims ohne Beweis
-3. **Konsistenz:** Skills führen IMMER alle Schritte aus
-4. **Fehler-Prävention:** Skills vergessen keine Schritte
+1. **Skill-based Automation:** Recurring workflows as skills
+2. **Evidence Required:** No merge claims without proof
+3. **Consistency:** Skills ALWAYS execute all steps
+4. **Error Prevention:** Skills don't forget steps
 
 ### Integration in CLAUDE.md
 
-Die projektspezifische `.claude/CLAUDE.md` definiert:
+The project-specific `.claude/CLAUDE.md` defines:
 
 ```markdown
-## SKILLS (Pflicht bei verfügbarem Skill!)
+## SKILLS (Required when skill available!)
 
-| Aktion | Skill | Aufruf |
-|--------|-------|--------|
-| PR erstellen + mergen | `/pr` | `Skill tool mit skill: "pr"` |
-| Release/Tag erstellen | `/release` | `Skill tool mit skill: "release"` |
-| Dependabot PRs mergen | `/merge-deps` | `Skill tool mit skill: "merge-deps"` |
+| Action | Skill | Invocation |
+|--------|-------|------------|
+| Create PR + merge | `/pr` | `Skill tool with skill: "pr"` |
+| Create release/tag | `/release` | `Skill tool with skill: "release"` |
+| Merge Dependabot PRs | `/merge-deps` | `Skill tool with skill: "merge-deps"` |
 ```
 
-### Skill-Trigger
+### Skill Triggers
 
-| User sagt... | Claude tut... |
-|--------------|---------------|
-| "erstelle PR", "create PR", "merge this" | `/pr` Skill |
-| "release", "neue version", "tag erstellen" | `/release` Skill |
-| "merge dependabot", "update deps" | `/merge-deps` Skill |
+| User says... | Claude does... |
+|--------------|----------------|
+| "create PR", "merge this" | `/pr` skill |
+| "release", "new version", "create tag" | `/release` skill |
+| "merge dependabot", "update deps" | `/merge-deps` skill |
 
 ---
 
-## 7. Projekt-spezifische Skills
+## 7. Project-specific Skills
 
 ### 7.1 `/pr` - Pull Request Workflow
 
-**Pfad:** `.claude/skills/pr/SKILL.md`
-**Trigger:** "erstelle PR", "create PR", "merge this"
+**Path:** `.claude/skills/pr/SKILL.md`
+**Trigger:** "create PR", "merge this"
 
-#### Workflow-Schritte
+#### Workflow Steps
 
 ```
 [1/6] Branch: feature/xyz       → Prepare Branch
@@ -681,25 +727,25 @@ Closes #N
 
 #### Error Handling
 
-- **Lokale CI rot:** STOP, Fehler fixen
-- **GitHub Actions rot:** STOP, lokal fixen, push
-- **Nie:** Skip steps, merge ohne grüne CI
+- **Local CI red:** STOP, fix errors
+- **GitHub Actions red:** STOP, fix locally, push
+- **Never:** Skip steps, merge without green CI
 
 ### 7.2 `/release` - Release Workflow
 
-**Pfad:** `.claude/skills/release/SKILL.md`
-**Trigger:** "release", "neue version", "tag erstellen"
+**Path:** `.claude/skills/release/SKILL.md`
+**Trigger:** "release", "new version", "create tag"
 
-#### Input-Formate
+#### Input Formats
 
-| Eingabe | Ergebnis |
-|---------|----------|
-| `0.9.0` oder `v0.9.0` | Version 0.9.0 |
+| Input | Result |
+|-------|--------|
+| `0.9.0` or `v0.9.0` | Version 0.9.0 |
 | `patch` | 0.8.0 → 0.8.1 |
 | `minor` | 0.8.0 → 0.9.0 |
 | `major` | 0.8.0 → 1.0.0 |
 
-#### Workflow-Schritte
+#### Workflow Steps
 
 ```
 [1/7] Version: 0.8.0 → 0.9.0    → Determine Version
@@ -711,28 +757,28 @@ Closes #N
 [7/7] Release: .../v0.9.0       → Verify GitHub Release
 ```
 
-#### Voraussetzungen
+#### Prerequisites
 
-- CHANGELOG.md MUSS Entry für neue Version haben
-- Entry MUSS Added, Changed, oder Fixed Section haben
+- CHANGELOG.md MUST have entry for new version
+- Entry MUST have Added, Changed, or Fixed section
 
 ### 7.3 `/merge-deps` - Dependabot Merge
 
-**Pfad:** `.claude/skills/merge-deps/SKILL.md`
+**Path:** `.claude/skills/merge-deps/SKILL.md`
 **Trigger:** "merge dependabot", "update deps"
 
 #### Workflow
 
 ```
 1. gh pr list --author "app/dependabot"
-2. Für jeden PR: gh pr checks <N>
+2. For each PR: gh pr checks <N>
 3. Ready (✅) → gh pr merge --auto
 4. Pending (⏳) → SKIP
 5. Failed (❌) → SKIP, Report
 6. git checkout main && git pull
 ```
 
-#### Output-Format
+#### Output Format
 
 ```
 Dependabot PRs: 3 found
@@ -751,130 +797,130 @@ Local main synced to abc1234
 
 ---
 
-## 8. Globale Skills
+## 8. Global Skills
 
-Diese Skills sind global unter `~/.claude/commands/` definiert und in ALLEN Projekten verfügbar.
+These skills are defined globally under `~/.claude/commands/` and available in ALL projects.
 
-### 8.1 `/impl-plan` - Implementierungsplan
+### 8.1 `/impl-plan` - Implementation Plan
 
-**Pfad:** `~/.claude/commands/impl-plan.md`
-**Zweck:** Detaillierter Plan vor komplexen Implementierungen
+**Path:** `~/.claude/commands/impl-plan.md`
+**Purpose:** Detailed plan before complex implementations
 
-#### Wann verwenden?
+#### When to use?
 
-- Neue Features mit mehreren Dateien
-- Refactorings mit Risiko
-- Sicherheitsrelevante Änderungen
-- Jede Änderung die Tests braucht
+- New features with multiple files
+- Refactorings with risk
+- Security-relevant changes
+- Any change that needs tests
 
-#### Generierte Sektionen
+#### Generated Sections
 
-| Phase | Sektionen |
-|-------|-----------|
-| 1: Analyse | Header, Blocking Questions, Prerequisites, TL;DR, Kontext, Glossar |
-| 2: Planung | Quick Wins, Nicht im Scope, Abhängigkeiten, Risiken, Security, Steps |
+| Phase | Sections |
+|-------|----------|
+| 1: Analysis | Header, Blocking Questions, Prerequisites, TL;DR, Context, Glossary |
+| 2: Planning | Quick Wins, Out of Scope, Dependencies, Risks, Security, Steps |
 | 3: Config | Dependencies, Environment, Feature Flags, Tests, Acceptance Criteria |
-| 4: Validierung | Docs, Rollback, Cleanup, PR Checkliste, DoD, TodoWrite Items |
+| 4: Validation | Docs, Rollback, Cleanup, PR Checklist, DoD, TodoWrite Items |
 
-#### Beispiel-Aufruf
+#### Example Invocation
 
 ```
-/impl-plan Füge Web Search Tool mit SearXNG hinzu
+/impl-plan Add Web Search Tool with SearXNG
 ```
 
-#### Besondere Merkmale
+#### Special Features
 
-- **Confidence Score:** 0-100% mit Begründung
-- **Risiko-Matrix:** Schwere + Mitigation
-- **Gherkin-Specs:** Akzeptanzkriterien als Given/When/Then
-- **TodoWrite-Items:** Automatische Todo-Generierung
+- **Confidence Score:** 0-100% with reasoning
+- **Risk Matrix:** Severity + Mitigation
+- **Gherkin Specs:** Acceptance criteria as Given/When/Then
+- **TodoWrite Items:** Automatic todo generation
 
 ### 8.2 `/claudemd` - CLAUDE.md Generator
 
-**Pfad:** `~/.claude/commands/claudemd.md`
-**Zweck:** Optimale projektspezifische CLAUDE.md erstellen
+**Path:** `~/.claude/commands/claudemd.md`
+**Purpose:** Create optimal project-specific CLAUDE.md
 
-#### Wann verwenden?
+#### When to use?
 
-- Neues Projekt startet
-- Bestehendes Projekt zu Claude Code migrieren
-- CLAUDE.md-Regeln aktualisieren
+- New project starts
+- Migrating existing project to Claude Code
+- Updating CLAUDE.md rules
 
-#### Generierte Struktur
+#### Generated Structure
 
 ```markdown
-# CLAUDE CODE - [Projektname]
+# CLAUDE CODE - [Project Name]
 
-## SECTION 1: CRITICAL RULES (Stabil - wird gecached)
-## SECTION 2: REQUIRED GUIDELINES (Stabil - wird gecached)
-## SECTION 3: WORKFLOWS (Stabil - wird gecached)
+## SECTION 1: CRITICAL RULES (Stable - cached)
+## SECTION 2: REQUIRED GUIDELINES (Stable - cached)
+## SECTION 3: WORKFLOWS (Stable - cached)
 ---
-## SECTION 4: PROJECT CONTEXT (Dynamisch)
-## SECTION 5: REFERENCES (Dynamisch)
+## SECTION 4: PROJECT CONTEXT (Dynamic)
+## SECTION 5: REFERENCES (Dynamic)
 ```
 
-**Wichtig:** Stabile Inhalte ZUERST für besseres Prompt Caching (90% Kostenreduktion).
+**Important:** Stable content FIRST for better prompt caching (90% cost reduction).
 
-#### Analyse-Phasen
+#### Analysis Phases
 
-1. Projekt-Typ erkennen (Web App, CLI, Library, ...)
-2. Tech-Stack identifizieren
-3. Bestehende Struktur prüfen
-4. Team-Kontext erfassen
+1. Detect project type (Web App, CLI, Library, ...)
+2. Identify tech stack
+3. Check existing structure
+4. Capture team context
 
-#### Bekannte Parser-Bugs (im Skill dokumentiert)
+#### Known Parser Bugs (documented in skill)
 
 | Bug | Workaround |
 |-----|------------|
-| #16700: Crash bei Leerzeilen nach Headers | Keine Leerzeile nach `#` |
-| #16853: Path-scoped Rules laden nicht | `/context` testen |
-| #17085: System Prompt Override | Akzeptieren |
+| #16700: Crash on empty lines after headers | No empty line after `#` |
+| #16853: Path-scoped rules don't load | Test `/context` |
+| #17085: System prompt override | Accept |
 
 ---
 
-## 9. Workflow-Diagramme
+## 9. Workflow Diagrams
 
-### Feature-Entwicklung (End-to-End)
+### Feature Development (End-to-End)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         FEATURE DEVELOPMENT FLOW                            │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-User: "Implementiere neues Feature X"
+User: "Implement new feature X"
             │
             ▼
 ┌──────────────────────┐
-│ 1. /impl-plan        │ ← Detaillierte Planung
-│    - Risiko-Analyse  │
-│    - Test-Strategie  │
-│    - TodoWrite Items │
+│ 1. /impl-plan        │ ← Detailed planning
+│    - Risk analysis   │
+│    - Test strategy   │
+│    - TodoWrite items │
 └──────────────────────┘
             │
             ▼
 ┌──────────────────────┐
-│ 2. Issue erstellen   │
+│ 2. Create issue      │
 │    gh issue create   │
 │    + status:backlog  │
 └──────────────────────┘
             │
             ▼
 ┌──────────────────────┐
-│ 3. Branch erstellen  │
+│ 3. Create branch     │
 │    feature/name      │
 └──────────────────────┘
             │
             ▼
 ┌──────────────────────┐
-│ 4. Implementierung   │ ← Code schreiben
-│    - Schritte aus    │
+│ 4. Implementation    │ ← Write code
+│    - Steps from      │
 │      /impl-plan      │
-│    - Todos abhaken   │
+│    - Check off todos │
 └──────────────────────┘
             │
             ▼
 ┌──────────────────────┐
-│ 5. act push          │ ← Lokale CI
+│ 5. act push          │ ← Local CI
 │    ✓ lint            │
 │    ✓ test            │
 │    ✓ security        │
@@ -883,14 +929,14 @@ User: "Implementiere neues Feature X"
             │
             ▼
 ┌──────────────────────┐
-│ 6. Manueller Test    │ ← Evidence sammeln
+│ 6. Manual test       │ ← Collect evidence
 │    docker run ...    │
-│    → Screenshot/Log  │
+│    → Screenshot/log  │
 └──────────────────────┘
             │
             ▼
 ┌──────────────────────┐
-│ 7. Dokumentation     │
+│ 7. Documentation     │
 │    - README          │
 │    - CHANGELOG       │
 │    - Version bump    │
@@ -898,16 +944,16 @@ User: "Implementiere neues Feature X"
             │
             ▼
 ┌──────────────────────┐
-│ 8. /pr Skill         │ ← Automatisiert:
+│ 8. /pr Skill         │ ← Automated:
 │    - Push            │
-│    - PR erstellen    │
-│    - CI warten       │
+│    - Create PR       │
+│    - Wait for CI     │
 │    - Merge           │
 └──────────────────────┘
             │
             ▼
 ┌──────────────────────┐
-│ 9. /release Skill    │ ← Optional bei Release
+│ 9. /release Skill    │ ← Optional for release
 │    - Tag             │
 │    - GitHub Release  │
 └──────────────────────┘
@@ -959,48 +1005,48 @@ User: "Implementiere neues Feature X"
 
 ## 10. Troubleshooting
 
-### CI schlägt fehl
+### CI Fails
 
-| Problem | Lösung |
-|---------|--------|
-| `ruff format` failed | `ruff format .` lokal ausführen |
-| `ruff check` failed | Fehler in Output lesen und fixen |
-| `pytest` failed | Tests lokal mit `pytest -v` debuggen |
-| `pip-audit` failed | Dependency updaten oder Issue öffnen |
-| `docker build` failed | Dockerfile prüfen, Syntax-Fehler |
-| `trivy` CRITICAL | Base-Image CVE - oft nicht fixbar, warten |
+| Problem | Solution |
+|---------|----------|
+| `ruff format` failed | Run `ruff format .` locally |
+| `ruff check` failed | Read errors in output and fix |
+| `pytest` failed | Debug tests locally with `pytest -v` |
+| `pip-audit` failed | Update dependency or open issue |
+| `docker build` failed | Check Dockerfile, syntax errors |
+| `trivy` CRITICAL | Base image CVE - often unfixable, wait |
 
-### Merge blockiert
+### Merge Blocked
 
-| Situation | Lösung |
-|-----------|--------|
-| Checks pending | `--auto` Flag nutzt (wartet automatisch) |
-| Checks failed | Lokal fixen, pushen |
-| Branch Protection | NIE `--admin`, immer `--auto` |
+| Situation | Solution |
+|-----------|----------|
+| Checks pending | Use `--auto` flag (waits automatically) |
+| Checks failed | Fix locally, push |
+| Branch Protection | NEVER `--admin`, always `--auto` |
 
-### Lokale CI vs Remote unterschiedlich
+### Local CI vs Remote Different
 
-| Mögliche Ursachen | Prüfen |
-|-------------------|--------|
-| Python-Version | Local = 3.12, Remote = 3.12 |
-| Dependencies | `pip freeze` vergleichen |
-| Docker Cache | `docker build --no-cache` |
-| act-Version | `act --version` prüfen |
+| Possible Causes | Check |
+|-----------------|-------|
+| Python version | Local = 3.12, Remote = 3.12 |
+| Dependencies | Compare `pip freeze` |
+| Docker cache | `docker build --no-cache` |
+| act version | Check `act --version` |
 
-### Release fehlgeschlagen
+### Release Failed
 
-| Problem | Lösung |
-|---------|--------|
-| Tag existiert schon | Anderer Version-Nummer wählen |
-| CHANGELOG fehlt | Entry hinzufügen mit korrektem Format |
-| Release-Action failed | Manuell unter GitHub Releases prüfen |
+| Problem | Solution |
+|---------|----------|
+| Tag already exists | Choose different version number |
+| CHANGELOG missing | Add entry with correct format |
+| Release action failed | Check manually under GitHub Releases |
 
 ---
 
-## Referenzen
+## References
 
 - **GitHub Actions Docs:** https://docs.github.com/en/actions
-- **act (lokale CI):** https://github.com/nektos/act
+- **act (local CI):** https://github.com/nektos/act
 - **Trivy Scanner:** https://aquasecurity.github.io/trivy/
 - **CodeQL:** https://codeql.github.com/
 - **Conventional Commits:** https://www.conventionalcommits.org/
@@ -1008,4 +1054,4 @@ User: "Implementiere neues Feature X"
 
 ---
 
-*Diese Dokumentation ist SSOT für die CI/CD-Pipeline des Network Agent Projekts.*
+*This documentation is SSOT for the CI/CD pipeline of the Network Agent project.*
