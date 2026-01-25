@@ -36,10 +36,23 @@ update_status() {
         return
     fi
 
-    # Collect live metrics from runner via SSH (only during build)
-    local metrics_json="{}"
     local build_status=$(echo "$status_json" | jq -r '.status')
+
+    # Collect live metrics and logs from runner via SSH (only during build)
+    local metrics_json="{}"
     if [[ "$build_status" == "in_progress" ]]; then
+        # Collect logs from Packer build (last 100 lines)
+        logs_array=$(ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@github-runner '
+            LOG="/tmp/packer-build.log"
+            if [[ -f "$LOG" ]]; then
+                # Get last 100 lines, escape for JSON, strip ANSI
+                tail -100 "$LOG" 2>/dev/null | \
+                    sed "s/\x1b\[[0-9;]*m//g" | \
+                    jq -Rs "split(\"\n\") | map(select(length > 0))"
+            else
+                echo "[]"
+            fi
+        ' 2>/dev/null || echo '[]')
         metrics_json=$(ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@github-runner '
             STATE_FILE="/tmp/metrics_state"
             NOW=$(date +%s)
@@ -142,25 +155,62 @@ EOF
 EOF
         ' 2>/dev/null || echo '{}')
 
-        # Also get Packer internal steps from log (sed-based extraction)
+        # Also get Packer internal steps from log with telemetry metrics
         packer_steps=$(ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no root@github-runner '
             LOG="/tmp/packer-build.log"
             [[ ! -f "$LOG" ]] && echo "[]" && exit 0
 
-            # Extract step|START/END|timestamp using sed (ANSI-stripped)
+            # Extract telemetry data from log
             declare -A starts
             declare -A ends
+            declare -A cpu
+            declare -A mem
+            declare -A disk_read
+            declare -A disk_write
+            declare -A disk_util
+            declare -A await
+            declare -A queue
 
-            while IFS="|" read -r step action ts; do
-                [[ -z "$step" ]] && continue
-                if [[ "$action" == "START" ]]; then
-                    starts["$step"]="$ts"
-                elif [[ "$action" == "END" ]]; then
-                    ends["$step"]="$ts"
+            # Parse ANSI-stripped log
+            while IFS= read -r line; do
+                # Strip ANSI
+                line=$(echo "$line" | sed "s/\x1b\[[0-9;]*m//g")
+
+                # Extract step name from START/END markers
+                if [[ "$line" =~ \[([A-Za-z0-9_]+)\]\ START:\ ([0-9T:+-]+) ]]; then
+                    step="${BASH_REMATCH[1]}"
+                    starts["$step"]="${BASH_REMATCH[2]}"
+                    current_step="$step"
+                elif [[ "$line" =~ \[([A-Za-z0-9_]+)\]\ END:\ ([0-9T:+-]+) ]]; then
+                    step="${BASH_REMATCH[1]}"
+                    ends["$step"]="${BASH_REMATCH[2]}"
                 fi
-            done < <(grep -E "START:|END:" "$LOG" 2>/dev/null | \
-                sed "s/\x1b\[[0-9;]*m//g" | \
-                sed "s/.*\[\([A-Za-z0-9_]*\)\] \(START\|END\): \([0-9T:+-]*\).*/\1|\2|\3/")
+
+                # Extract metrics for current step
+                if [[ -n "$current_step" ]]; then
+                    if [[ "$line" =~ CPU:\ ~?([0-9.]+)% ]]; then
+                        cpu["$current_step"]="${BASH_REMATCH[1]}"
+                    fi
+                    if [[ "$line" =~ Memory:\ ([0-9]+)MB ]]; then
+                        mem["$current_step"]="${BASH_REMATCH[1]}"
+                    fi
+                    if [[ "$line" =~ "Disk Read:"\ ([0-9]+)MB ]]; then
+                        disk_read["$current_step"]="${BASH_REMATCH[1]}"
+                    fi
+                    if [[ "$line" =~ "Disk Write:"\ ([0-9]+)MB ]]; then
+                        disk_write["$current_step"]="${BASH_REMATCH[1]}"
+                    fi
+                    if [[ "$line" =~ util=([0-9]+)% ]]; then
+                        disk_util["$current_step"]="${BASH_REMATCH[1]}"
+                    fi
+                    if [[ "$line" =~ await=([0-9]+)ms ]]; then
+                        await["$current_step"]="${BASH_REMATCH[1]}"
+                    fi
+                    if [[ "$line" =~ queue=([0-9.]+) ]]; then
+                        queue["$current_step"]="${BASH_REMATCH[1]}"
+                    fi
+                fi
+            done < "$LOG"
 
             # Build JSON array (sorted by start time)
             echo -n "["
@@ -172,7 +222,17 @@ EOF
                 end="${ends[$step]:-}"
                 status="in_progress"
                 [[ -n "$end" ]] && status="completed"
-                echo -n "{\"name\":\"$step\",\"status\":\"$status\",\"started_at\":\"$start\",\"completed_at\":\"${end:-}\"}"
+                echo -n "{\"name\":\"$step\",\"status\":\"$status\""
+                echo -n ",\"started_at\":\"$start\""
+                [[ -n "$end" ]] && echo -n ",\"completed_at\":\"$end\""
+                [[ -n "${cpu[$step]}" ]] && echo -n ",\"cpu_percent\":${cpu[$step]}"
+                [[ -n "${mem[$step]}" ]] && echo -n ",\"memory_mb\":${mem[$step]}"
+                [[ -n "${disk_read[$step]}" ]] && echo -n ",\"disk_read_mb\":${disk_read[$step]}"
+                [[ -n "${disk_write[$step]}" ]] && echo -n ",\"disk_write_mb\":${disk_write[$step]}"
+                [[ -n "${disk_util[$step]}" ]] && echo -n ",\"disk_util_percent\":${disk_util[$step]}"
+                [[ -n "${await[$step]}" ]] && echo -n ",\"await_ms\":${await[$step]}"
+                [[ -n "${queue[$step]}" ]] && echo -n ",\"queue_depth\":${queue[$step]}"
+                echo -n "}"
             done
             echo "]"
         ' 2>/dev/null || echo '[]')

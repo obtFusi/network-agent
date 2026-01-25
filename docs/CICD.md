@@ -209,27 +209,31 @@ ignoreLabels: |
 
 ### 2.6 Appliance Build Workflow
 
-**Trigger:** `workflow_dispatch` (manuell) oder `release` (bei Tag)
+**Architektur:** Zwei-Tier Build (Base Image + Appliance Layer)
 **Runner:** Self-hosted (Proxmox LXC)
 **Artifact Storage:** MinIO (LAN) für schnellen Inter-Job Transfer
 
-#### One-Click Appliance Build
-
-Das Appliance-Build erstellt ein **komplettes, sofort einsatzbereites VM-Image**:
+#### Two-Tier Build Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    ONE-CLICK APPLIANCE BUILD                     │
+│                    TWO-TIER APPLIANCE BUILD                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  COMPLETE IMAGE (pro Release, ~40 min mit Ollama-Cache)         │
+│  BASE IMAGE (selten bauen, ~40 min)                             │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │ • Debian 13 (Trixie) + Docker CE                           │ │
 │  │ • systemd-networkd + SSH Hardening + Kernel Tuning         │ │
-│  │ • Ollama + Models (~20 GB) ← aus Cache, kein Download!     │ │
+│  │ • Ollama + qwen3:30b-a3b Model (~20 GB)                    │ │
+│  │ → Speichern in MinIO: appliance-base/                       │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                              ↓                                   │
+│  APPLIANCE LAYER (pro Release, ~5 min)                          │
+│  ┌────────────────────────────────────────────────────────────┐ │
 │  │ • /opt/network-agent/ (Docker Compose Files)               │ │
 │  │ • Docker Images (ghcr.io) für Offline-Betrieb              │ │
 │  │ • First-boot Setup + Firewall Rules                        │ │
+│  │ • Version-spezifische Konfiguration                        │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                              ↓                                   │
 │              network-agent-0.10.1.qcow2 → GitHub Release        │
@@ -238,27 +242,66 @@ Das Appliance-Build erstellt ein **komplettes, sofort einsatzbereites VM-Image**
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Vorteil:** User startet VM und hat sofort funktionsfähige Appliance.
+**Vorteile:**
+- Release-Builds: ~5 min statt ~40 min
+- Keine Debian-Installation pro Release
+- Keine Ollama-Model-Transfers pro Release
+- Einfacheres Debugging (Base vs. App Layer getrennt)
 
-#### Workflow
+#### Workflows
 
-```yaml
-# Appliance bauen
-gh workflow run appliance-build.yml -f version=0.10.1
+**1. Base Image Build (selten, nur bei System-Änderungen):**
+
+```bash
+# Base Image bauen (Debian + Docker + Ollama)
+gh workflow run appliance-base-build.yml -f ollama_model=qwen3:30b-a3b
 ```
 
-**Jobs (appliance-build.yml, 3 jobs):**
+Wann neu bauen?
+- Debian-Version Upgrade (13.3 → 13.4)
+- Docker Major Update
+- Ollama Model-Wechsel
+- Kernel/SSH/Network-Konfigurationsänderungen
+
+**2. Appliance Build (pro Release):**
+
+```bash
+# Appliance bauen (nutzt Base Image)
+gh workflow run appliance-build.yml -f version=0.10.1
+
+# Mit spezifischem Base Image
+gh workflow run appliance-build.yml -f version=0.10.1 -f base_image=debian-docker-ollama-20260125.qcow2
+```
+
+**Jobs (appliance-build.yml):**
 
 | Job | Runner | Timeout | Description |
 |-----|--------|---------|-------------|
 | `validate` | ubuntu-latest | 10m | Validate Packer template + docker-compose |
-| `build` | **self-hosted** | 90m | Complete build with Ollama cache |
+| `build` | **self-hosted** | 30m | Download base + add Network Agent layer |
 | `e2e-test` | **self-hosted** | 30m | Test VM, upload to Release |
 
-**Ollama Model Cache:**
-- Persistenter Cache auf Runner: `/opt/ollama-cache/ollama-models.tar.zst` (~15GB)
-- Spart ~40GB Download pro Build
-- Build-Zeit mit Cache: ~40 min (statt ~90 min ohne Cache)
+**Jobs (appliance-base-build.yml):**
+
+| Job | Runner | Timeout | Description |
+|-----|--------|---------|-------------|
+| `build-base` | **self-hosted** | 120m | Complete base image with Ollama |
+
+#### MinIO Bucket Structure
+
+```
+appliance-base/
+├── debian-docker-ollama-20260125.qcow2     # Base Image
+├── debian-docker-ollama-20260125.qcow2.sha256
+└── (ältere Base Images für Rollback)
+
+appliance-builds/
+└── {version}/                              # Temp, auto-cleanup nach E2E
+    ├── network-agent-0.10.1.qcow2.part-aa
+    ├── network-agent-0.10.1.qcow2.part-ab
+    ├── ...
+    └── SHA256SUMS
+```
 
 **MinIO Artifact Storage:**
 

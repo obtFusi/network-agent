@@ -1,0 +1,194 @@
+name: Build Base Image
+
+# BASE IMAGE BUILD (RARELY NEEDED)
+# Builds Debian + Docker + Ollama + Models base image
+# Uploads to MinIO appliance-base/ bucket for reuse
+#
+# When to rebuild:
+# - Debian version upgrade (13.3 -> 13.4)
+# - Docker major update
+# - Ollama model change (qwen3:30b-a3b -> newer)
+# - System configuration changes
+#
+# After base image is built, appliance-build.yml uses it
+# This makes appliance builds ~5 min instead of ~40 min
+
+on:
+  workflow_dispatch:
+    inputs:
+      ollama_model:
+        description: 'Ollama model to embed'
+        required: true
+        type: string
+        default: 'qwen3:30b-a3b'
+      force_rebuild:
+        description: 'Force rebuild even if base exists'
+        type: boolean
+        default: false
+
+concurrency:
+  group: appliance-base-build
+  cancel-in-progress: false
+
+env:
+  PACKER_VERSION: "1.11.0"
+
+permissions:
+  contents: read
+
+jobs:
+  build-base:
+    name: Build Base Image
+    runs-on: self-hosted
+    timeout-minutes: 120
+    outputs:
+      base_image: ${{ steps.upload.outputs.BASE_IMAGE }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+          allowed-endpoints: >
+            github.com:443
+            cdimage.debian.org:443
+            deb.debian.org:443
+            security.debian.org:443
+            registry.ollama.ai:443
+            download.docker.com:443
+            dl.min.io:443
+
+      - uses: actions/checkout@v4
+
+      - name: Check existing base image
+        if: ${{ inputs.force_rebuild != true }}
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        run: |
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
+          chmod +x /tmp/mc
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+
+          # Check if base image already exists
+          EXISTING=$(/tmp/mc ls minio/appliance-base/ 2>/dev/null | grep -o 'debian-docker-ollama-[0-9]*\.qcow2' | sort -r | head -1 || echo "")
+          if [[ -n "$EXISTING" ]]; then
+            echo "::notice::Base image already exists: $EXISTING"
+            echo "Use force_rebuild=true to create a new one"
+            echo "BASE_EXISTS=true" >> $GITHUB_ENV
+          fi
+
+      - name: Install dependencies
+        if: ${{ env.BASE_EXISTS != 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zstd qemu-utils bc jq
+
+      - name: Setup Packer
+        if: ${{ env.BASE_EXISTS != 'true' }}
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Verify KVM support
+        if: ${{ env.BASE_EXISTS != 'true' }}
+        run: |
+          if [[ ! -e /dev/kvm ]]; then
+            echo "ERROR: KVM not available"
+            exit 1
+          fi
+
+      - name: Prepare Ollama model cache
+        if: ${{ env.BASE_EXISTS != 'true' }}
+        env:
+          OLLAMA_MODEL: ${{ inputs.ollama_model }}
+        run: |
+          CACHE_DIR="/opt/ollama-cache"
+          ARCHIVE_PATH="$CACHE_DIR/ollama-models.tar.zst"
+
+          # Check cache
+          if [[ -f "$ARCHIVE_PATH" ]] && zstd -t "$ARCHIVE_PATH" 2>/dev/null; then
+            echo "✅ Ollama cache valid"
+          else
+            echo "📥 Building Ollama cache..."
+            sudo mkdir -p "$CACHE_DIR"
+            sudo chown runner:runner "$CACHE_DIR"
+
+            if ! command -v ollama &> /dev/null; then
+              curl -fsSL https://ollama.com/install.sh | sudo sh
+            fi
+
+            for i in {1..30}; do
+              curl -sf http://localhost:11434/api/tags > /dev/null && break
+              sleep 2
+            done
+
+            ollama pull "$OLLAMA_MODEL"
+            ollama pull "qwen3:4b-instruct-2507-q4_K_M"
+
+            cd /usr/share/ollama/.ollama
+            sudo tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
+            sudo chown runner:runner "$ARCHIVE_PATH"
+            sudo rm -rf /usr/share/ollama/.ollama/models
+          fi
+
+      - name: Start NFS server for Packer
+        if: ${{ env.BASE_EXISTS != 'true' }}
+        run: |
+          # Ensure NFS is running for QEMU VM to mount
+          sudo apt-get install -y nfs-kernel-server
+          echo "/opt/ollama-cache 10.0.2.0/24(ro,sync,no_subtree_check,no_root_squash)" | sudo tee /etc/exports
+          sudo exportfs -rav
+          sudo systemctl restart nfs-server
+
+      - name: Initialize Packer
+        if: ${{ env.BASE_EXISTS != 'true' }}
+        working-directory: infrastructure/packer
+        run: packer init base-image.pkr.hcl
+
+      - name: Build base image
+        if: ${{ env.BASE_EXISTS != 'true' }}
+        working-directory: infrastructure/packer
+        run: |
+          echo "Building base image (Debian + Docker + Ollama)..."
+          packer build \
+            -var "ollama_model=${{ inputs.ollama_model }}" \
+            -on-error=abort \
+            base-image.pkr.hcl
+
+      - name: Upload to MinIO
+        id: upload
+        if: ${{ env.BASE_EXISTS != 'true' }}
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+        run: |
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
+          chmod +x /tmp/mc
+          /tmp/mc alias set minio $MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+
+          # Find the built image
+          QCOW2=$(ls infrastructure/packer/output-base/*.qcow2)
+          BASE_NAME=$(basename "$QCOW2")
+
+          echo "Uploading $BASE_NAME to MinIO..."
+          /tmp/mc cp "$QCOW2" minio/appliance-base/
+
+          # Generate checksum
+          sha256sum "$QCOW2" > infrastructure/packer/output-base/SHA256SUM
+          /tmp/mc cp infrastructure/packer/output-base/SHA256SUM minio/appliance-base/${BASE_NAME}.sha256
+
+          echo "BASE_IMAGE=$BASE_NAME" >> $GITHUB_OUTPUT
+          echo "✅ Base image uploaded: $BASE_NAME"
+
+          # List all base images
+          echo ""
+          echo "Available base images:"
+          /tmp/mc ls minio/appliance-base/
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf infrastructure/packer/output-base/ || true
+          sudo fstrim -av || true

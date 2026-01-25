@@ -436,15 +436,37 @@ GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
                      └─ Docker Compose Status
 ```
 
-**One-Click Appliance Build:**
-- `appliance-build.yml` - Pro Release: Komplettes Image mit Ollama-Cache (~40 min) → GitHub Release
+**Two-Tier Appliance Build (Base Image + Appliance Layer):**
 
-**appliance-build.yml Phasen (3 Jobs mit MinIO):**
+```
+BASE IMAGE (selten, ~40 min)              APPLIANCE (pro Release, ~5 min)
+┌─────────────────────────────┐          ┌─────────────────────────────┐
+│ Debian 13 + Docker + Ollama │    →     │ + Network Agent Layer       │
+│ (~20 GB Ollama Models)      │          │ + Docker Compose + Firewall │
+└─────────────────────────────┘          └─────────────────────────────┘
+        ↓                                          ↓
+  appliance-base/               →         network-agent-X.Y.Z.qcow2
+  (MinIO Storage)                            (GitHub Release)
+```
+
+**appliance-base-build.yml (selten, nur bei System-Änderungen):**
+- Wann: Debian-Update, Docker-Update, Ollama-Model-Wechsel
+- Trigger: Nur `workflow_dispatch` (manuell)
+- Output: `appliance-base/debian-docker-ollama-YYYYMMDD.qcow2`
+
+**appliance-build.yml (pro Release, ~5 min statt ~40 min):**
 1. `validate` - Templates prüfen (ubuntu-latest, ~20s)
-2. `build` - Komplettes Image bauen (Ollama aus Cache) + zu MinIO uploaden (self-hosted, ~40 min)
-3. `e2e-test` - Von MinIO downloaden + Test-VM + bei Release: zu GitHub Release uploaden (self-hosted, ~15 min)
+2. `build` - Base Image laden + Network Agent Layer hinzufügen (self-hosted, ~5 min)
+3. `e2e-test` - Test-VM + bei Release: zu GitHub Release uploaden (self-hosted, ~15 min)
 
-**Ollama-Cache:** Persistenter Cache auf Runner spart ~40GB Download pro Build
+**Commands:**
+```bash
+# Base Image bauen (selten)
+gh workflow run appliance-base-build.yml -f ollama_model=qwen3:30b-a3b
+
+# Appliance bauen (pro Release)
+gh workflow run appliance-build.yml -f version=X.Y.Z
+```
 
 ### MinIO Artifact Storage
 
@@ -453,10 +475,11 @@ GitHub Runner (LXC) ──SSH──> Proxmox Host (10.0.0.69)
 | Container | `minio` (Proxmox LXC 160) |
 | IP | `10.0.0.165` |
 | Ports | 9000 (API), 9001 (Web Console) |
-| Buckets | `appliance-builds` (temp), `appliance-telemetry` (persistent) |
+| Buckets | `appliance-base`, `appliance-builds` (temp), `appliance-telemetry` |
 | Status | `ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"` |
 
 **Bucket-Struktur:**
+- `appliance-base/` - Base Images (persistent, selten aktualisiert)
 - `appliance-builds/` - Build Artifacts (temp, auto-cleanup nach E2E)
 - `appliance-telemetry/` - Telemetrie-Daten (persistent für Vergleiche)
 
