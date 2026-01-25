@@ -135,15 +135,15 @@ jobs:
       - name: Start NFS server for Packer
         if: ${{ env.BASE_EXISTS != 'true' }}
         run: |
-          # NFS for QEMU VM - SLIRP NAT means traffic appears as localhost
-          sudo apt-get install -y nfs-kernel-server
+          # NFS for QEMU VM - allow all IPs (runner is not public, safe)
           # insecure: allow non-privileged ports (QEMU uses high ports)
-          # 127.0.0.1: SLIRP NAT makes VM traffic appear as localhost
-          echo "/opt/ollama-cache 127.0.0.1(ro,sync,insecure,no_subtree_check,no_root_squash)" | sudo tee /etc/exports
+          sudo apt-get install -y nfs-kernel-server
+          echo "/opt/ollama-cache *(ro,sync,insecure,no_subtree_check,no_root_squash)" | sudo tee /etc/exports
           sudo exportfs -rav
           sudo systemctl restart nfs-server
-          # Verify
+          # Verify export
           showmount -e localhost
+          echo "NFS ready for QEMU VM"
 
       - name: Initialize Packer
         if: ${{ env.BASE_EXISTS != 'true' }}
