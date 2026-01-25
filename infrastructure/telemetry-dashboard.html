@@ -197,14 +197,20 @@
         .steps-list { display: flex; flex-direction: column; gap: 8px; }
         .step-item {
             display: flex;
-            align-items: center;
-            gap: 12px;
+            flex-direction: column;
+            gap: 8px;
             padding: 12px 16px;
             background: var(--bg-secondary);
             border-radius: 10px;
             transition: background 0.2s;
+            cursor: pointer;
         }
         .step-item:hover { background: rgba(0, 212, 255, 0.1); }
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
         .step-icon {
             width: 24px;
             height: 24px;
@@ -213,6 +219,7 @@
             align-items: center;
             justify-content: center;
             font-size: 14px;
+            flex-shrink: 0;
         }
         .step-icon.completed { background: var(--success); color: var(--bg-primary); }
         .step-icon.running { background: var(--warning); color: var(--bg-primary); animation: pulse 1s infinite; }
@@ -222,6 +229,44 @@
         .step-item.active { background: rgba(255, 193, 7, 0.15); border-radius: 8px; margin: 2px -8px; padding: 10px 16px; }
         .step-name { flex: 1; font-size: 14px; }
         .step-duration { color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+        .step-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+        .step-badge {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .step-badge.cpu { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
+        .step-badge.io { background: rgba(255, 230, 109, 0.2); color: #ffe66d; }
+        .step-badge.net { background: rgba(162, 155, 254, 0.2); color: #a29bfe; }
+        .step-badge.slow { background: rgba(255, 68, 102, 0.2); color: var(--danger); }
+        .step-details {
+            display: none;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border-radius: 6px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+        .step-item.expanded .step-details { display: block; }
+        .step-details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 8px;
+        }
+        .step-detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .step-detail-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; }
+        .step-detail-value { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+        .step-desc {
+            font-size: 11px;
+            color: var(--text-secondary);
+            padding-left: 36px;
+            margin-top: -4px;
+        }
 
         /* Build Phases */
         .build-phases { display: flex; flex-direction: column; gap: 12px; }
@@ -281,6 +326,40 @@
         .log-line.qemu { color: #a371f7; }
         .log-line.docker { color: #3fb950; }
         .log-line.error { color: #f85149; }
+        .log-line.telemetry { color: #ffa657; font-weight: 500; }
+        .log-line.step-start { color: #79c0ff; background: rgba(121, 192, 255, 0.1); }
+        .log-line.step-end { color: #56d364; background: rgba(86, 211, 100, 0.1); }
+        .log-line.metric { color: #e3b341; }
+        .log-filters {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .log-filter-btn {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .log-filter-btn:hover { border-color: var(--accent); }
+        .log-filter-btn.active { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); }
+        .log-filter-btn.error.active { background: var(--danger); border-color: var(--danger); }
+        .log-search {
+            flex: 1;
+            min-width: 150px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 11px;
+        }
+        .log-search::placeholder { color: var(--text-secondary); }
 
         /* Overall Progress Bar */
         .progress-container {
@@ -608,6 +687,14 @@
                     <div class="card-icon">📜</div>
                     <div class="card-title">Live Logs</div>
                     <div class="log-count" id="log-count">0 lines</div>
+                </div>
+                <div class="log-filters">
+                    <button class="log-filter-btn active" data-filter="all" onclick="setLogFilter('all')">All</button>
+                    <button class="log-filter-btn" data-filter="telemetry" onclick="setLogFilter('telemetry')">📊 Telemetry</button>
+                    <button class="log-filter-btn" data-filter="packer" onclick="setLogFilter('packer')">🔧 Packer</button>
+                    <button class="log-filter-btn" data-filter="docker" onclick="setLogFilter('docker')">🐳 Docker</button>
+                    <button class="log-filter-btn error" data-filter="error" onclick="setLogFilter('error')">⚠️ Errors</button>
+                    <input type="text" class="log-search" id="log-search" placeholder="Filter logs..." oninput="filterLogs()">
                 </div>
                 <div id="live-logs" class="live-logs">
                     <div class="log-placeholder">Warte auf Logs...</div>
@@ -1098,6 +1185,88 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
+        // Store all logs for filtering
+        let allLogs = [];
+        let currentLogFilter = 'all';
+
+        function classifyLogLine(line) {
+            const lower = line.toLowerCase();
+            const classes = ['log-line'];
+            const tags = [];
+
+            // Telemetry markers
+            if (line.includes('START:') || line.includes('[') && line.includes('] START')) {
+                classes.push('step-start', 'telemetry');
+                tags.push('telemetry');
+            } else if (line.includes('END:') || line.includes('] END:')) {
+                classes.push('step-end', 'telemetry');
+                tags.push('telemetry');
+            } else if (line.includes('Duration:') || line.includes('CPU:') || line.includes('Memory:') || line.includes('Disk') || line.includes('util=')) {
+                classes.push('metric', 'telemetry');
+                tags.push('telemetry');
+            }
+
+            // Tool-specific
+            if (lower.includes('packer') || line.includes('==>')) {
+                classes.push('packer');
+                tags.push('packer');
+            }
+            if (lower.includes('qemu')) {
+                classes.push('qemu');
+                tags.push('packer');
+            }
+            if (lower.includes('docker') || lower.includes('ghcr.io') || lower.includes('compose')) {
+                classes.push('docker');
+                tags.push('docker');
+            }
+
+            // Errors
+            if (lower.includes('error') || lower.includes('failed') || lower.includes('fatal')) {
+                classes.push('error');
+                tags.push('error');
+            }
+
+            return { classes: classes.join(' '), tags };
+        }
+
+        function setLogFilter(filter) {
+            currentLogFilter = filter;
+            // Update button states
+            document.querySelectorAll('.log-filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+            });
+            filterLogs();
+        }
+
+        function filterLogs() {
+            const container = document.getElementById('live-logs');
+            const searchTerm = document.getElementById('log-search').value.toLowerCase();
+
+            const filtered = allLogs.filter(({ line, tags }) => {
+                // Filter by category
+                if (currentLogFilter !== 'all' && !tags.includes(currentLogFilter)) {
+                    return false;
+                }
+                // Filter by search term
+                if (searchTerm && !line.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="log-placeholder">Keine passenden Logs gefunden</div>';
+                return;
+            }
+
+            const html = filtered.map(({ line, classes }) =>
+                `<div class="${classes}">${escapeHtml(line)}</div>`
+            ).join('');
+
+            container.innerHTML = html;
+            container.scrollTop = container.scrollHeight;
+        }
+
         function renderLiveLogs(logs) {
             const container = document.getElementById('live-logs');
             const countEl = document.getElementById('log-count');
@@ -1105,23 +1274,20 @@
             if (!logs || logs.length === 0) {
                 container.innerHTML = '<div class="log-placeholder">Warte auf Logs...</div>';
                 countEl.textContent = '0 lines';
+                allLogs = [];
                 return;
             }
 
+            // Process and store logs with classifications
+            allLogs = logs.map(line => {
+                const { classes, tags } = classifyLogLine(line);
+                return { line, classes, tags };
+            });
+
             countEl.textContent = `${logs.length} lines`;
 
-            const html = logs.map(line => {
-                let className = 'log-line';
-                if (line.includes('packer') || line.includes('Packer')) className += ' packer';
-                else if (line.includes('qemu') || line.includes('QEMU')) className += ' qemu';
-                else if (line.includes('docker') || line.includes('Docker')) className += ' docker';
-                else if (line.toLowerCase().includes('error') || line.toLowerCase().includes('failed')) className += ' error';
-                return `<div class="${className}">${escapeHtml(line)}</div>`;
-            }).join('');
-
-            container.innerHTML = html;
-            // Auto-scroll to bottom
-            container.scrollTop = container.scrollHeight;
+            // Apply current filter
+            filterLogs();
         }
 
         function escapeHtml(text) {
@@ -1245,6 +1411,24 @@
             document.getElementById('steps-list').innerHTML = html;
         }
 
+        // Step descriptions for better understanding
+        const STEP_DESCRIPTIONS = {
+            'Verify_Base': 'Prüft Base-Image: Docker, Ollama, SSH',
+            'Copy_Compose': 'Kopiert docker-compose.yml ins Image',
+            'Copy_FirstBoot': 'Kopiert first-boot.sh für Initialisierung',
+            'Write_Version': 'Schreibt Versionsnummer ins Image',
+            'Docker_Pull': 'Lädt Docker Images von ghcr.io',
+            'FirstBoot_Firewall': 'Konfiguriert Systemd + nftables',
+            'Cleanup_Shutdown': 'Räumt auf, komprimiert, fährt herunter',
+            // Base image steps
+            'Install_Base': 'Debian Basis-Installation (preseed)',
+            'Apt_Config': 'APT Repositories konfigurieren',
+            'Install_Docker': 'Docker Engine installieren',
+            'Install_Ollama': 'Ollama LLM Runtime installieren',
+            'Pull_Models': 'Ollama Modelle laden (~15GB)',
+            'Configure_Services': 'Systemd Services konfigurieren',
+        };
+
         function renderPackerSteps(packerSteps) {
             const container = document.getElementById('packer-steps-list');
             const countEl = document.getElementById('packer-steps-count');
@@ -1266,7 +1450,7 @@
                 inProgress.name.replace(/^Step\d+[a-z]?_/, '').replace(/_/g, ' ') :
                 null;
 
-            const html = packerSteps.map(s => {
+            const html = packerSteps.map((s, idx) => {
                 let icon, iconClass;
                 if (s.status === 'in_progress') {
                     icon = '●';
@@ -1292,11 +1476,53 @@
                     .replace(/^Step\d+[a-z]?_/, '')
                     .replace(/_/g, ' ');
 
+                // Find step description
+                const stepKey = s.name.replace(/^Step\d+[a-z]?_/, '');
+                const description = STEP_DESCRIPTIONS[stepKey] || '';
+
+                // Generate badges for notable metrics
+                const badges = [];
+                if (s.cpu_percent && s.cpu_percent > 80) {
+                    badges.push(`<span class="step-badge cpu">CPU ${s.cpu_percent}%</span>`);
+                }
+                if (s.disk_util_percent && s.disk_util_percent > 70) {
+                    badges.push(`<span class="step-badge io">I/O ${s.disk_util_percent}%</span>`);
+                }
+                if (s.net_rx_mb && s.net_rx_mb > 50) {
+                    badges.push(`<span class="step-badge net">↓${s.net_rx_mb}MB</span>`);
+                }
+                if (duration > 300) {
+                    badges.push(`<span class="step-badge slow">Slow</span>`);
+                }
+
+                // Build metrics detail section
+                const hasMetrics = s.cpu_percent || s.memory_mb || s.disk_util_percent || s.net_rx_mb;
+                const metricsHtml = hasMetrics ? `
+                    <div class="step-details">
+                        <div class="step-details-grid">
+                            ${s.cpu_percent ? `<div class="step-detail-item"><span class="step-detail-label">CPU</span><span class="step-detail-value">${s.cpu_percent}%</span></div>` : ''}
+                            ${s.memory_mb ? `<div class="step-detail-item"><span class="step-detail-label">Memory</span><span class="step-detail-value">${s.memory_mb} MB</span></div>` : ''}
+                            ${s.disk_read_mb ? `<div class="step-detail-item"><span class="step-detail-label">Disk Read</span><span class="step-detail-value">${s.disk_read_mb} MB</span></div>` : ''}
+                            ${s.disk_write_mb ? `<div class="step-detail-item"><span class="step-detail-label">Disk Write</span><span class="step-detail-value">${s.disk_write_mb} MB</span></div>` : ''}
+                            ${s.disk_util_percent ? `<div class="step-detail-item"><span class="step-detail-label">I/O Util</span><span class="step-detail-value">${s.disk_util_percent}%</span></div>` : ''}
+                            ${s.await_ms ? `<div class="step-detail-item"><span class="step-detail-label">I/O Await</span><span class="step-detail-value">${s.await_ms}ms</span></div>` : ''}
+                            ${s.queue_depth ? `<div class="step-detail-item"><span class="step-detail-label">Queue</span><span class="step-detail-value">${s.queue_depth}</span></div>` : ''}
+                            ${s.net_rx_mb ? `<div class="step-detail-item"><span class="step-detail-label">Network ↓</span><span class="step-detail-value">${s.net_rx_mb} MB</span></div>` : ''}
+                        </div>
+                    </div>
+                ` : '';
+
                 return `
-                    <div class="step-item ${s.status === 'in_progress' ? 'active' : ''}">
-                        <div class="step-icon ${iconClass}">${icon}</div>
-                        <span class="step-name">${displayName}</span>
-                        <span class="step-duration">${formatDuration(duration)}</span>
+                    <div class="step-item ${s.status === 'in_progress' ? 'active' : ''} ${hasMetrics ? 'has-metrics' : ''}"
+                         onclick="this.classList.toggle('expanded')">
+                        <div class="step-header">
+                            <div class="step-icon ${iconClass}">${icon}</div>
+                            <span class="step-name">${displayName}</span>
+                            ${badges.length > 0 ? `<div class="step-badges">${badges.join('')}</div>` : ''}
+                            <span class="step-duration">${formatDuration(duration)}</span>
+                        </div>
+                        ${description ? `<div class="step-desc">${description}</div>` : ''}
+                        ${metricsHtml}
                     </div>
                 `;
             }).join('');
