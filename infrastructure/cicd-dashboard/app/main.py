@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import __version__
+from app.api.webhooks import router as webhooks_router
 from app.config import settings
 from app.database import get_db, init_db
 from app.models import Pipeline
@@ -32,6 +33,9 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+
+# Include routers
+app.include_router(webhooks_router)
 
 
 # Type alias for database dependency
