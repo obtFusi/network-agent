@@ -70,8 +70,8 @@ variable "ollama_model" {
 
 variable "nfs_server_ip" {
   type        = string
-  description = "IP of NFS server with Ollama model cache"
-  default     = "10.0.0.127"
+  description = "IP of NFS server (10.0.2.2 = QEMU user-mode host)"
+  default     = "10.0.2.2"
 }
 
 # Local variables
@@ -97,7 +97,6 @@ source "qemu" "appliance" {
   machine_type   = "q35"
   accelerator    = "kvm"
   net_device     = "virtio-net"
-  net_bridge     = "br0"  # Bridge networking - VM gets real LAN IP
   disk_interface = "virtio-scsi"
 
   # Debian preseed for unattended install
