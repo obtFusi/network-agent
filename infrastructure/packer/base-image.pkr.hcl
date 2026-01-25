@@ -250,7 +250,7 @@ build {
       "ls -lh /mnt/host-cache/",
       "df -h /var/tmp",
       "echo 'Copying models (direct host access, no network)...'",
-      "/usr/bin/time -v cp /mnt/host-cache/ollama-models.tar.zst /var/tmp/",
+      "START=$$(date +%s) && cp /mnt/host-cache/ollama-models.tar.zst /var/tmp/ && END=$$(date +%s) && echo \"Transfer completed in $$((END-START)) seconds\"",
       "umount /mnt/host-cache",
       "ls -lh /var/tmp/ollama-models.tar.zst",
       "zstd -t /var/tmp/ollama-models.tar.zst && echo 'Integrity OK'"
