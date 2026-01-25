@@ -267,8 +267,9 @@ build {
       "echo ''",
       "echo 'Verifying pre-baked models...'",
       "systemctl start ollama",
-      "sleep 3",
-      "ollama list",
+      "echo 'Waiting for ollama to be ready (up to 60s)...'",
+      "for i in $(seq 1 12); do ollama list && break || { echo \"Attempt $i/12 - waiting 5s...\"; sleep 5; }; done",
+      "ollama list || { echo 'ERROR: ollama failed to start'; exit 1; }",
       "systemctl stop ollama",
       "echo '=== Pre-baked models installed successfully ==='"
     ]
