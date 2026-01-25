@@ -98,19 +98,22 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare Ollama model cache
+      - name: Prepare Ollama model cache (pre-baked)
         if: ${{ env.BASE_EXISTS != 'true' }}
         env:
           OLLAMA_MODEL: ${{ inputs.ollama_model }}
         run: |
           CACHE_DIR="/opt/ollama-cache"
-          ARCHIVE_PATH="$CACHE_DIR/ollama-models.tar.zst"
+          MODELS_DIR="$CACHE_DIR/models"
 
-          # Check cache
-          if [[ -f "$ARCHIVE_PATH" ]] && zstd -t "$ARCHIVE_PATH" 2>/dev/null; then
-            echo "✅ Ollama cache valid"
+          # Check cache - now we use extracted models directory (not tar.zst)
+          if [[ -d "$MODELS_DIR" && -n "$(ls -A $MODELS_DIR 2>/dev/null)" ]]; then
+            echo "✅ Ollama cache valid (pre-baked models)"
+            ls -lh "$MODELS_DIR"
           else
-            echo "📥 Building Ollama cache..."
+            echo "📥 Building Ollama cache (pre-baked)..."
+            # Remove old tar.zst cache if exists
+            sudo rm -f "$CACHE_DIR/ollama-models.tar.zst" 2>/dev/null || true
             sudo mkdir -p "$CACHE_DIR"
             sudo chown runner:runner "$CACHE_DIR"
 
@@ -126,21 +129,30 @@ jobs:
             ollama pull "$OLLAMA_MODEL"
             ollama pull "qwen3:4b-instruct-2507-q4_K_M"
 
-            cd /usr/share/ollama/.ollama
-            sudo tar -cf - models/ | zstd -3 -T0 > "$ARCHIVE_PATH"
-            sudo chown runner:runner "$ARCHIVE_PATH"
-            sudo rm -rf /usr/share/ollama/.ollama/models
+            # Pre-baked: Keep models as directory (no tar.zst compression)
+            # This eliminates 2x redundant I/O during Packer build
+            sudo mv /usr/share/ollama/.ollama/models "$MODELS_DIR"
+            sudo chown -R runner:runner "$MODELS_DIR"
+            echo "✅ Models cached as directory: $MODELS_DIR"
+            ls -lh "$MODELS_DIR"
+            du -sh "$MODELS_DIR"
           fi
 
       - name: Prepare virtio-9p cache access
         if: ${{ env.BASE_EXISTS != 'true' }}
         run: |
           # virtio-9p: direct host filesystem passthrough (faster than NFS)
-          # No NFS server needed - QEMU directly exposes host directory to VM
+          # Pre-baked: models/ directory instead of tar.zst archive
           echo "virtio-9p cache path: /opt/ollama-cache"
           ls -lh /opt/ollama-cache/
-          # Verify cache is readable
-          zstd -t /opt/ollama-cache/ollama-models.tar.zst && echo "Cache OK"
+          # Verify models directory exists
+          if [[ -d "/opt/ollama-cache/models" ]]; then
+            echo "✅ Models directory OK"
+            du -sh /opt/ollama-cache/models
+          else
+            echo "❌ ERROR: /opt/ollama-cache/models not found!"
+            exit 1
+          fi
 
       - name: Initialize Packer
         if: ${{ env.BASE_EXISTS != 'true' }}
