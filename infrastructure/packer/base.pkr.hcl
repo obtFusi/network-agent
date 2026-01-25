@@ -68,6 +68,12 @@ variable "ollama_model" {
   default     = "qwen3:30b-a3b"
 }
 
+variable "nfs_server_ip" {
+  type        = string
+  description = "IP of NFS server with Ollama model cache"
+  default     = "10.0.0.127"
+}
+
 # Local variables
 locals {
   output_name = "network-agent-${var.version}"
@@ -91,6 +97,7 @@ source "qemu" "appliance" {
   machine_type   = "q35"
   accelerator    = "kvm"
   net_device     = "virtio-net"
+  net_bridge     = "br0"  # Bridge networking - VM gets real LAN IP
   disk_interface = "virtio-scsi"
 
   # Debian preseed for unattended install
@@ -121,7 +128,7 @@ source "qemu" "appliance" {
   headless = true
   display  = "none"
 
-  # Fixed HTTP port for model transfer (10.0.2.2 is QEMU user networking host)
+  # HTTP server for preseed only (model transfer via NFS)
   http_port_min = 8080
   http_port_max = 8080
 
@@ -131,11 +138,8 @@ source "qemu" "appliance" {
   vnc_port_max     = 5999
 
   # CPU passthrough for better build performance
-  # virtio-9p for direct host-to-guest file sharing (no network = reliable)
   qemuargs = [
-    ["-cpu", "host"],
-    ["-fsdev", "local,id=ollama_cache,path=/opt/ollama-cache,security_model=mapped-xattr"],
-    ["-device", "virtio-9p-pci,fsdev=ollama_cache,mount_tag=ollama_cache"]
+    ["-cpu", "host"]
   ]
 }
 
@@ -262,28 +266,31 @@ build {
     ]
   }
 
-  # Step 7a: Transfer Ollama models from host cache via virtio-9p
-  # Direct host-to-guest file sharing - no network involved = 100% reliable
-  # virtio-9p mount tag 'ollama_cache' is configured in qemuargs above
+  # Step 7a: Transfer Ollama models from NFS share
+  # Bridge networking gives VM a real LAN IP, can mount NFS directly
+  # NFS is reliable for large file transfers (unlike QEMU user-mode HTTP)
   provisioner "shell" {
     inline_shebang = "/bin/bash -e"
     inline = [
       "source /usr/local/bin/telemetry.sh",
       "telemetry_start 'Step7a_Transfer_Models'",
-      "echo '=== Mounting host cache via virtio-9p ==='",
-      "mkdir -p /mnt/host-cache",
-      "mount -t 9p -o trans=virtio,version=9p2000.L ollama_cache /mnt/host-cache",
-      "ls -lh /mnt/host-cache/",
+      "echo '=== Installing NFS client ==='",
+      "apt-get update && apt-get install -y nfs-common",
+      "echo '=== Mounting NFS share from ${var.nfs_server_ip} ==='",
+      "mkdir -p /mnt/nfs-cache",
+      "mount -t nfs -o ro,vers=4 ${var.nfs_server_ip}:/opt/ollama-cache /mnt/nfs-cache",
+      "ls -lh /mnt/nfs-cache/",
       "echo '=== Checking disk space ==='",
       "df -h /var/tmp",
-      "echo '=== Copying Ollama models (direct, no network) ==='",
-      "cp -v /mnt/host-cache/ollama-models.tar.zst /var/tmp/",
+      "echo '=== Copying Ollama models via NFS ==='",
+      "cp -v /mnt/nfs-cache/ollama-models.tar.zst /var/tmp/",
       "echo '=== Unmounting and verifying ==='",
-      "umount /mnt/host-cache",
+      "umount /mnt/nfs-cache",
       "ls -lh /var/tmp/ollama-models.tar.zst",
       "zstd -t /var/tmp/ollama-models.tar.zst && echo 'Integrity verified!' || exit 1",
       "telemetry_end 'Step7a_Transfer_Models'"
     ]
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
   }
 
   # Step 7b: Extract Ollama models
