@@ -1,0 +1,42 @@
+# CI/CD Dashboard - Docker Compose
+# Standalone deployment of the CI/CD Dashboard
+
+services:
+  dashboard-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cicd-dashboard-backend
+    ports:
+      - "8081:8080"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///data/cicd.db
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+      - DEBUG=${DEBUG:-false}
+    volumes:
+      - dashboard-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  dashboard-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cicd-dashboard-frontend
+    ports:
+      - "8082:80"
+    depends_on:
+      dashboard-backend:
+        condition: service_healthy
+    environment:
+      - API_URL=http://dashboard-backend:8080
+    restart: unless-stopped
+
+volumes:
+  dashboard-data:
