@@ -5,6 +5,8 @@
 #   Default (secure):     docker compose up -d
 #   Host network (L2/L3): docker compose -f docker-compose.yml -f docker-compose.scan-mode.yml up -d
 #   With SearXNG:         docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
+#
+# Includes Open WebUI at /chat for direct model interaction and parameter tuning.
 
 services:
   net-agent:
@@ -43,10 +45,24 @@ services:
     hostname: ollama
     restart: unless-stopped
     environment:
-      # CPU Optimization: use cores-2 threads (auto-detect would use all)
+      # CPU threads (empty = auto-detect all cores)
       - OLLAMA_NUM_THREADS=${OLLAMA_NUM_THREADS:-}
-      # Keep models loaded longer (5min default, increase for frequent use)
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}
+      # Flash Attention: required for KV cache quantization, works on CPU
+      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
+      # KV cache quantization: ~50% less RAM for context (requires flash attention)
+      - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
+      # Never unload model (dedicated appliance, no cold-starts)
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
+      # Only 1 model at a time (default 3 on CPU would cause OOM)
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+      # Default context window (8k balanced for scan reports)
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-8192}
+      # CPU model loading can be slow, prevent false timeout
+      - OLLAMA_LOAD_TIMEOUT=${OLLAMA_LOAD_TIMEOUT:-10m}
+      # Don't prune pre-baked model blobs on startup
+      - OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE:-true}
+      # CORS: allow Open WebUI access
+      - OLLAMA_ORIGINS=${OLLAMA_ORIGINS:-*}
     volumes:
       # Bind mount pre-baked models from base image (not Docker volume)
       - /usr/share/ollama/.ollama:/root/.ollama
@@ -80,6 +96,30 @@ services:
       net-agent:
         condition: service_healthy
 
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    hostname: open-webui
+    restart: unless-stopped
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # No login required (appliance is already behind Caddy Basic Auth)
+      - WEBUI_AUTH=false
+      - ENABLE_SIGNUP=false
+    volumes:
+      - open-webui-data:/app/backend/data
+    networks:
+      - agent-net
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   postgres:
     image: postgres:16.6-alpine
     container_name: postgres
@@ -111,3 +151,4 @@ volumes:
   postgres-data:
   caddy-data:
   caddy-config:
+  open-webui-data:

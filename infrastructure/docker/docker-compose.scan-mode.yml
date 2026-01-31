@@ -31,6 +31,11 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
 
+  # Open WebUI needs localhost access to Ollama in host mode
+  open-webui:
+    environment:
+      - OLLAMA_BASE_URL=http://127.0.0.1:11434
+
   # Caddy still handles external access
   caddy:
     environment:
