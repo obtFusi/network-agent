@@ -26,17 +26,24 @@ https:// {
         {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
     }
 
-    # Reverse proxy to net-agent
-    reverse_proxy net-agent:8080 {
-        # Health check
-        health_uri /health
-        health_interval 30s
-        health_timeout 10s
+    # Open WebUI Chat Interface
+    handle_path /chat* {
+        reverse_proxy open-webui:8080
+    }
 
-        # Timeouts for long-running scans
-        transport http {
-            read_timeout 300s
-            write_timeout 300s
+    # Network Agent (default)
+    handle {
+        reverse_proxy net-agent:8080 {
+            # Health check
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+
+            # Timeouts for long-running scans
+            transport http {
+                read_timeout 300s
+                write_timeout 300s
+            }
         }
     }
 

@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.10.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.0-blue.svg)](CHANGELOG.md)
 
 > **For Developers:** [CI/CD Documentation](docs/CICD.md) - Pipeline, GitHub Actions, Claude Code Skills
 
@@ -197,6 +197,7 @@ For a turnkey solution, there's a preconfigured **Proxmox VM** with everything p
 - Ollama with Qwen3 (local LLM, no API key needed)
   - **Standard:** Qwen3 4B Instruct (~3GB, optimized for CPU-only)
   - **Optional:** Qwen3 30B-A3B (~20GB, better quality with more RAM)
+- Open WebUI at `/chat` (direct model interaction + parameter tuning)
 - Caddy Reverse Proxy (HTTPS + Basic Auth)
 - PostgreSQL (Database)
 - Offline-capable (no external dependencies at runtime)
@@ -262,7 +263,8 @@ On first login:
 4. Services start automatically
 
 **Access:**
-- Web UI: `https://<VM-IP>` (credentials from first-boot)
+- Network Agent: `https://<VM-IP>` (credentials from first-boot)
+- Open WebUI Chat: `https://<VM-IP>/chat` (same credentials)
 - SSH: `ssh root@<VM-IP>`
 
 **Scan Mode (Host Network for L2/L3):**
@@ -284,7 +286,7 @@ docker compose -f docker-compose.yml -f docker-compose.online.yml up -d
 ```
 
 **Ports:**
-- 443: HTTPS Web Interface (Caddy)
+- 443: HTTPS Web Interface (Caddy) - Agent at `/`, Open WebUI at `/chat`
 - 22: SSH
 
 </details>

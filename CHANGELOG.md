@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-01-31
+
+### Added
+- **Open WebUI**: Chat interface at `/chat` for direct model interaction and parameter tuning (#85)
+- **Ollama CPU Optimization**: 7 new environment variables for CPU-only appliance (#85)
+  - `OLLAMA_FLASH_ATTENTION=1` - Flash attention for KV cache quantization
+  - `OLLAMA_KV_CACHE_TYPE=q8_0` - Halves KV cache RAM usage
+  - `OLLAMA_MAX_LOADED_MODELS=1` - Prevents loading multiple models (default was 3)
+  - `OLLAMA_KEEP_ALIVE=-1` - Model stays permanently loaded (no cold-starts)
+  - `OLLAMA_CONTEXT_LENGTH=8192` - Doubled context window
+  - `OLLAMA_LOAD_TIMEOUT=10m` - Prevents timeout on slow CPU
+  - `OLLAMA_NOPRUNE=true` - Protects pre-baked models from cleanup
+
+### Changed
+- **Context Window**: 4k to 8k tokens (same RAM usage via q8_0 KV cache quantization)
+- **Batch Size**: 512 to 128 (optimized for 4-core CPU)
+- **Inference**: Explicit CPU-only mode (`num_gpu: 0`)
+
 ## [0.10.0] - 2026-01-20
 
 ### Changed
