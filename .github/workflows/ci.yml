@@ -26,7 +26,8 @@ jobs:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: requirements-dev.txt
-      # Konsistent: ruff aus requirements-dev.txt (Version gepinnt)
+      # Install runtime deps (with hashes) then dev deps (without hashes) separately
+      - run: pip install -r requirements.txt
       - run: pip install -r requirements-dev.txt
       - run: ruff format --check .
       - run: ruff check agent/ tools/ cli.py
@@ -51,6 +52,7 @@ jobs:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements.txt
       - run: pip install -r requirements-dev.txt
       - run: pytest --cov=agent --cov=tools --cov-report=term-missing
 
@@ -126,6 +128,7 @@ jobs:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements.txt
       - run: pip install -r requirements-dev.txt
       - name: Start pentest lab
         run: docker compose -f docker-compose.pentest-lab.yml up -d --wait --timeout 120
