@@ -1,6 +1,6 @@
 # Network Agent
 
-[![Version](https://img.shields.io/badge/version-0.10.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.0-blue.svg)](CHANGELOG.md)
 
 > **For Developers:** [CI/CD Documentation](docs/CICD.md) - Pipeline, GitHub Actions, Claude Code Skills
 
@@ -229,7 +229,7 @@ The script:
 
 ```bash
 # Download all parts + checksums
-VERSION="0.10.0"
+VERSION="0.12.0"
 for part in aa ab ac ad ae af ag ah ai aj ak al am an; do
   wget "https://github.com/obtFusi/network-agent/releases/download/v${VERSION}/network-agent-${VERSION}.qcow2.zst.part-${part}"
 done
@@ -384,6 +384,75 @@ Network Agent starting...
 | macOS | Yes | TCP-Connect | Start normally |
 
 **Automatic Detection:** The agent automatically detects if ICMP ping is possible. If not (Docker on Windows/macOS), TCP-Connect scan is used automatically.
+
+## Authorization System
+
+Network Agent uses a 3-tier authorization system to control which tools can execute:
+
+| Level | Activation | Tools | Risk |
+|-------|-----------|-------|------|
+| **passive** | Default | ping_sweep, port_scanner, dns_lookup, enumeration tools | Read-only |
+| **active** | `--i-have-written-authorization` flag | LLMNR poisoner, password spray, Kerberoasting | Network manipulation |
+| **destructive** | Flag + per-tool CLI confirmation | Pass-the-Hash, WMI Exec, Golden Ticket | Remote code execution |
+
+```bash
+# Passive mode (default) - reconnaissance only
+docker run -it --rm --network host --env-file .env network-agent:latest
+
+# Active mode - requires written pentest authorization
+docker run -it --rm --network host --env-file .env network-agent:latest \
+  python cli.py --i-have-written-authorization
+```
+
+**Destructive tools** always require a per-tool CLI confirmation prompt, even with the flag. This Human-in-the-Loop design prevents the LLM from autonomously executing high-risk operations.
+
+## Findings Database
+
+All security findings are stored in a SQLite database for tracking and reporting:
+
+```bash
+# Export findings as JSON
+python cli.py --export json
+
+# Export as HTML report
+python cli.py --export html
+
+# Custom database path
+python cli.py --findings-db /path/to/findings.db
+```
+
+**API Access** (when running in server mode):
+- `GET /api/v1/findings` - List findings with filters (severity, host, tool)
+- `GET /api/v1/findings/export?format=html` - Download report
+- `GET /api/v1/scan-runs` - List scan execution history
+
+**Configuration** (`config/settings.yaml`):
+```yaml
+findings:
+  enabled: true              # Enable/disable findings storage
+  db_path: "data/findings.db"
+  retention_days: 90         # Auto-purge after 90 days (0 = disabled)
+  store_raw_output: false    # Don't store raw tool output (credential safety)
+```
+
+## Scope Enforcement
+
+Restrict scanning to explicitly allowed targets using a scope file:
+
+```bash
+python cli.py --scope-file targets.txt
+```
+
+**Scope file format** (`targets.txt`):
+```
+# Allowed targets (one per line)
+192.168.1.0/24
+10.0.0.0/16
+dc01.lab.local
+fileserver.internal
+```
+
+Targets outside the scope file are blocked and recorded as denied scans.
 
 ## Security
 
@@ -561,43 +630,69 @@ The AI doesn't understand your question or gives strange answers.
 
 ```
 network-agent/
-├── cli.py              # Main program (REPL)
+├── cli.py                  # Main program (REPL) + version
 ├── agent/
-│   ├── core.py         # AI agent with tool loop + session memory
-│   └── llm.py          # LLM client (OpenAI-compatible)
+│   ├── core.py             # AI agent with tool loop, auth, findings
+│   ├── llm.py              # LLM client (OpenAI-compatible)
+│   └── api/                # FastAPI REST API
+│       ├── app.py          # Application factory
+│       ├── routers/        # API endpoints (health, chat, sessions, findings)
+│       └── models/         # Pydantic response models
 ├── tools/
-│   ├── base.py         # Tool base class
-│   ├── config.py       # Scan configuration (singleton)
-│   ├── validation.py   # Input validation
-│   ├── network/        # Network tools
+│   ├── base.py             # BaseTool ABC (auth, category, report_finding)
+│   ├── authorization.py    # 3-tier authorization system
+│   ├── findings_store.py   # SQLite findings database
+│   ├── findings_export.py  # JSON/CSV/HTML export
+│   ├── scope.py            # Scope enforcement (CIDR/host allowlist)
+│   ├── config.py           # Scan configuration (singleton)
+│   ├── validation.py       # Input validation
+│   ├── recon/              # Reconnaissance tools (passive)
 │   │   ├── ping_sweep.py
 │   │   ├── dns_lookup.py
 │   │   ├── port_scanner.py
 │   │   └── service_detect.py
-│   └── web/            # Web tools
+│   ├── poison/             # Network poisoning tools (active)
+│   ├── enum/               # Enumeration tools (passive)
+│   ├── harvest/            # Credential harvesting (active)
+│   ├── lateral/            # Lateral movement (destructive)
+│   ├── persist/            # Persistence mechanisms (destructive)
+│   ├── compliance/         # Reporting tools (passive)
+│   └── web/
 │       └── web_search.py   # SearXNG web search
 ├── config/
-│   ├── settings.yaml   # Provider & scan configuration
+│   ├── settings.yaml       # Provider, scan, findings configuration
 │   └── prompts/
-│       └── system.md   # System prompt for AI
-├── searxng/            # SearXNG configuration
-│   └── settings.yml    # Search engine configuration
-├── docker-compose.yml  # Linux (with host network)
-├── docker-compose.macos.yml  # macOS/Windows (with bridge network)
-├── Dockerfile          # Container definition
-├── requirements.txt    # Python dependencies
-└── .env.example        # API key template
+│       └── system.md       # System prompt for AI
+├── data/                   # Findings database storage
+├── docker-compose.yml      # Production deployment
+├── docker-compose.pentest-lab.yml  # Integration test lab
+├── Dockerfile
+├── requirements.in         # Direct dependencies (human-maintained)
+├── requirements.txt        # Locked dependencies (pip-compile)
+└── .env.example
 ```
 
 ### Adding custom tools
 
-1. Create new file under `tools/`
+1. Create new file under the appropriate `tools/<category>/` directory
 2. Inherit from `BaseTool` and implement `name`, `description`, `parameters`, `execute`
-3. Register in `tools/__init__.py`
+3. Set `authorization_level` property (`"passive"`, `"active"`, or `"destructive"`)
+4. Set `category` property (e.g., `"recon"`, `"enum"`, `"harvest"`)
+5. Use `self.report_finding()` to record security findings
+6. Register in `tools/__init__.py`
 
-See `tools/network/ping_sweep.py` for an example.
+See `tools/recon/ping_sweep.py` for an example.
 
 </details>
+
+## Data Protection
+
+Network Agent processes all scan data **locally on your machine**. No data is transmitted to external services (except LLM API calls for natural language processing).
+
+- **Findings database**: Stored locally in `data/findings.db` (SQLite)
+- **Credentials**: Automatically redacted before database storage
+- **Retention**: Configurable auto-purge (default: 90 days, set `findings.retention_days: 0` to disable)
+- **Your responsibility**: Ensure you have authorization to scan target networks and comply with applicable data protection regulations (GDPR/DSGVO) for the networks you scan
 
 ## License
 

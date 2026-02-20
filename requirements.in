@@ -1,0 +1,29 @@
+# Network Agent - Direct Dependencies
+# Generated lock file: pip-compile --generate-hashes --allow-unsafe requirements.in
+
+# LLM Client
+openai==2.21.0
+
+# Configuration
+pyyaml==6.0.3
+python-dotenv==1.2.1
+
+# Network Tools
+dnspython==2.8.0
+
+# HTTP Client
+requests==2.32.5
+httpx==0.28.1
+
+# HTTP API Server
+fastapi==0.129.0
+starlette==0.52.1
+uvicorn[standard]==0.41.0
+
+# Logging
+structlog==25.5.0
+
+# Attack Simulation Dependencies (v0.12+)
+ldap3==2.9.1
+impacket==0.13.0
+scapy==2.7.0

@@ -1,0 +1,2 @@
+Welcome to the FTP server.
+This is a test file for the Network Agent pentest lab.

@@ -1,0 +1,10 @@
+Lab Network Topology
+====================
+Gateway:    172.30.0.1
+Attacker:   172.30.0.10
+Samba:      172.30.0.20
+SNMP:       172.30.0.30
+Webserver:  172.30.0.40
+FTP:        172.30.0.50
+Telnet:     172.30.0.60
+OpenLDAP:   172.30.0.70

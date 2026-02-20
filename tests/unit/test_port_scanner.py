@@ -2,13 +2,13 @@
 
 from unittest.mock import patch, MagicMock
 import pytest
-from tools.network.port_scanner import PortScannerTool
+from tools.recon.port_scanner import PortScannerTool
 
 
 @pytest.fixture
 def mock_nmap_available():
     """Mock nmap availability check."""
-    with patch("tools.network.port_scanner.require_nmap") as mock:
+    with patch("tools.recon.port_scanner.require_nmap") as mock:
         mock.return_value = (True, "")
         yield mock
 
@@ -65,7 +65,7 @@ class TestPortScannerTool:
 
     def test_timing_case_insensitive(self, mock_nmap_available):
         """Lowercase timing should work."""
-        with patch("tools.network.port_scanner.subprocess.run") as mock_run:
+        with patch("tools.recon.port_scanner.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             result = self.tool.execute("127.0.0.1", timing="t3")
             assert "Validation error" not in result
@@ -83,19 +83,19 @@ class TestPortScannerTool:
 
     def test_port_range_valid(self, mock_nmap_available):
         """Valid port range should work."""
-        with patch("tools.network.port_scanner.subprocess.run") as mock_run:
+        with patch("tools.recon.port_scanner.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             result = self.tool.execute("127.0.0.1", ports="1-1000")
             assert "Validation error" not in result
 
     def test_port_list_valid(self, mock_nmap_available):
         """Valid port list should work."""
-        with patch("tools.network.port_scanner.subprocess.run") as mock_run:
+        with patch("tools.recon.port_scanner.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             result = self.tool.execute("127.0.0.1", ports="22,80,443")
             assert "Validation error" not in result
 
-    @patch("tools.network.port_scanner.subprocess.run")
+    @patch("tools.recon.port_scanner.subprocess.run")
     def test_successful_scan(self, mock_run, mock_nmap_available):
         """Successful scan should return results."""
         mock_run.return_value = MagicMock(
@@ -107,7 +107,7 @@ class TestPortScannerTool:
         assert "Port Scan" in result
         assert "22/tcp" in result or "PORT" in result
 
-    @patch("tools.network.port_scanner.subprocess.run")
+    @patch("tools.recon.port_scanner.subprocess.run")
     def test_uses_tcp_connect_scan(self, mock_run, mock_nmap_available):
         """Should use TCP Connect scan (-sT)."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -115,7 +115,7 @@ class TestPortScannerTool:
         cmd = mock_run.call_args[0][0]
         assert "-sT" in cmd
 
-    @patch("tools.network.port_scanner.subprocess.run")
+    @patch("tools.recon.port_scanner.subprocess.run")
     def test_uses_no_dns_flag(self, mock_run, mock_nmap_available):
         """Should use -n flag to prevent DNS leak."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -123,7 +123,7 @@ class TestPortScannerTool:
         cmd = mock_run.call_args[0][0]
         assert "-n" in cmd
 
-    @patch("tools.network.port_scanner.subprocess.run")
+    @patch("tools.recon.port_scanner.subprocess.run")
     def test_skip_discovery_flag(self, mock_run, mock_nmap_available):
         """skip_discovery should add -Pn flag."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -131,7 +131,7 @@ class TestPortScannerTool:
         cmd = mock_run.call_args[0][0]
         assert "-Pn" in cmd
 
-    @patch("tools.network.port_scanner.subprocess.run")
+    @patch("tools.recon.port_scanner.subprocess.run")
     def test_warning_pn_with_network(self, mock_run, mock_nmap_available):
         """Warning when using -Pn with network range."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -139,8 +139,8 @@ class TestPortScannerTool:
         assert "Warning" in result
         assert "-Pn" in result or "slow" in result.lower()
 
-    @patch("tools.network.port_scanner.subprocess.run")
-    @patch("tools.network.port_scanner.get_scan_config")
+    @patch("tools.recon.port_scanner.subprocess.run")
+    @patch("tools.recon.port_scanner.get_scan_config")
     def test_default_top_ports(self, mock_get_config, mock_run, mock_nmap_available):
         """Without ports param and no config ports, should use --top-ports."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
