@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-02-20
+
+### Added
+- **LLMNR/NBT-NS Detector** (`llmnr_detector`): Passive detection of LLMNR (UDP 5355) and NBT-NS (UDP 137) traffic on the network using scapy packet capture. Identifies hosts vulnerable to name resolution poisoning attacks. (Closes #87)
+- **SMB Signing Check** (`smb_signing_check`): Checks whether SMB signing is required on target hosts using impacket. Hosts without required signing are vulnerable to SMB relay attacks. (Closes #90)
+- **Kerberoasting Checker** (`kerberoast`): Identifies Kerberoastable service accounts in Active Directory by requesting TGS tickets for accounts with SPNs and extracting offline-crackable hashes via impacket. Authorization: active. (Closes #94)
+- **LLMNR Poisoner** (`llmnr_poisoner`): Active LLMNR/NBT-NS poisoning tool that responds to broadcast name resolution queries with attacker IP to capture NTLM hashes. Uses scapy for packet crafting with timeout-based operation. Authorization: active. (Closes #97)
+- **Tool count**: 5 → 9 tools (4 new attack simulation tools across recon, harvest, and poison phases)
+
+### Fixed
+- **Thread exception propagation**: LLMNR Poisoner now properly propagates exceptions from the sniff thread back to the main thread for reliable error reporting
+
 ## [0.12.0] - 2026-02-20
 
 ### Added
