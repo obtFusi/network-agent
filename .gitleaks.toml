@@ -1,0 +1,8 @@
+# Gitleaks configuration
+# Allowlist for known false positives in test data
+
+[allowlist]
+  description = "Test data for credential redaction unit tests"
+  paths = [
+    '''tests/unit/test_findings_store\.py''',
+  ]

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-02-20
+
+### Added
+- **Attack-Chain Architecture**: New directory structure organized by attack phases (recon, poison, enum, harvest, lateral, persist, compliance)
+- **3-Tier Authorization System**: passive (default), active (`--i-have-written-authorization`), destructive (flag + per-tool CLI confirmation with 1-hour TTL)
+- **Findings Database (SQLite)**: Persistent storage for security findings and scan runs with WAL mode, thread-safe access, and credential redaction
+- **Findings Export**: Export reports in JSON, CSV, and HTML format with SHA256 integrity checksums
+- **Findings API**: REST endpoints for querying findings (`GET /api/v1/findings`) and scan runs (`GET /api/v1/scan-runs`) with filtering and export
+- **Scope Enforcement**: `--scope-file` flag for target allowlists (CIDR ranges and hostnames), blocks out-of-scope targets
+- **Tool-Call Safety Limit**: `max_tool_calls` config option (default: 200) prevents runaway LLM tool-call loops
+- **ToolResult Dataclass**: Structured tool return values with status (completed/failed/denied/cancelled/timeout) and error types
+- **Docker Compose Pentest Lab**: 7 vulnerable services (Samba, SNMP, LDAP, FTP, Telnet, HTTP, OpenLDAP) on isolated internal network for integration testing
+- **Integration Test Framework**: pytest fixtures with lab availability detection and SSOT IP constants
+- **Dependencies**: Added ldap3, impacket, scapy for AD enumeration, SMB/Kerberos operations, and packet crafting
+- **Supply-Chain Security**: `requirements.in` with `pip-compile --generate-hashes` for locked transitive dependencies
+- **SECURITY.md**: Responsible disclosure policy with response timeline
+- **CLI Flags**: `--findings-db`, `--export`, `--scope-file` for findings management
+
+### Changed
+- **Directory Migration**: `tools/network/` renamed to `tools/recon/` (all imports updated)
+- **BaseTool Extended**: Added `authorization_level`, `category`, `target_fields` properties and `report_finding()` method
+- **Agent Core**: Authorization check, scope validation, findings recording, and tool-call limit integrated into tool execution loop
+- **API Default Bind**: Changed from `0.0.0.0` to `127.0.0.1` for security
+- **Config**: Added `scan.authorization_level`, `scan.max_tool_calls`, `findings.*` sections to settings.yaml
+
+### Security
+- Authorization blocks active/destructive tools without explicit flag
+- Destructive tools require Human-in-the-Loop CLI confirmation (not automatable by LLM)
+- Credential redaction strips passwords, NTLM hashes, API keys from database entries
+- Pentest lab network isolated (`internal: true`, no external routing)
+- Container hardening: `read_only`, `no-new-privileges`, capability dropping
+
 ## [0.10.0] - 2026-01-20
 
 ### Changed

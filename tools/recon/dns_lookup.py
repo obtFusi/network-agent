@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
     tool = DNSLookupTool()
     if len(sys.argv) < 2:
-        print("Usage: python -m tools.network.dns_lookup <target> [record_type]")
+        print("Usage: python -m tools.recon.dns_lookup <target> [record_type]")
         sys.exit(1)
     print(
         tool.execute(

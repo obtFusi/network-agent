@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agent.api.config import APIConfig
 from agent.api.middleware import RequestIDMiddleware, TimingMiddleware
 from agent.api.middleware.error_handler import global_exception_handler
-from agent.api.routers import chat, health, sessions
+from agent.api.routers import chat, findings, health, sessions
 from agent.api.services.session_store import SessionStore
 
 logger = structlog.get_logger()
@@ -38,6 +38,7 @@ def create_app(
     config: dict,
     system_prompt: str,
     api_config: APIConfig | None = None,
+    findings_store=None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -65,6 +66,7 @@ def create_app(
     app.state.config = config
     app.state.system_prompt = system_prompt
     app.state.api_config = api_config
+    app.state.findings_store = findings_store
 
     # Add CORS middleware
     app.add_middleware(
@@ -86,5 +88,6 @@ def create_app(
     app.include_router(health.router)
     app.include_router(chat.router, prefix="/api/v1")
     app.include_router(sessions.router, prefix="/api/v1")
+    app.include_router(findings.router, prefix="/api/v1")
 
     return app

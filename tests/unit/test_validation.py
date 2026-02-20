@@ -431,14 +431,14 @@ class TestPingSweepNmapOrder:
     """v5.4: nmap-Check must come BEFORE _has_raw_socket_access."""
 
     # v5.7: Patch must be in the module where it's used!
-    @patch("tools.network.ping_sweep.require_nmap")
+    @patch("tools.recon.ping_sweep.require_nmap")
     def test_nmap_check_before_has_raw_socket_access(self, mock_require_nmap):
         """v5.4: If nmap not found, _has_raw_socket_access should NOT be called."""
         mock_require_nmap.return_value = (
             False,
             "Error: nmap not found. Please install nmap.",
         )
-        from tools.network.ping_sweep import PingSweepTool
+        from tools.recon.ping_sweep import PingSweepTool
 
         tool = PingSweepTool()
 
@@ -455,7 +455,7 @@ class TestPingSweepTypeGuards:
 
     def test_network_not_string_rejected(self):
         """v5.8: Non-string network rejected."""
-        from tools.network.ping_sweep import PingSweepTool
+        from tools.recon.ping_sweep import PingSweepTool
 
         tool = PingSweepTool()
         result = tool.execute(network=["192.168.1.0/24"])
@@ -464,7 +464,7 @@ class TestPingSweepTypeGuards:
 
     def test_method_not_string_rejected(self):
         """v5.8: Non-string method rejected."""
-        from tools.network.ping_sweep import PingSweepTool
+        from tools.recon.ping_sweep import PingSweepTool
 
         tool = PingSweepTool()
         result = tool.execute(network="192.168.1.1", method=123)
@@ -481,7 +481,7 @@ class TestPingSweepConfigIntegration:
         config_file.write_text("scan: 'not-a-dict'\n")
         with patch.dict("os.environ", {"NETWORK_AGENT_CONFIG": str(config_file)}):
             from tools.config import reset_scan_config
-            from tools.network.ping_sweep import PingSweepTool
+            from tools.recon.ping_sweep import PingSweepTool
 
             reset_scan_config()
             tool = PingSweepTool()
