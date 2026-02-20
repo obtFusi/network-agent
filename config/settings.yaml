@@ -42,8 +42,25 @@ scan:
   #   - "192.168.1.0/24"    # Exclude entire subnet
   #   - "10.0.0.5"          # Exclude single IP
 
+  # Authorization level: passive (default), active, destructive
+  # CLI flag --i-have-written-authorization overrides this to "active"
+  authorization_level: passive
+
+  # Maximum tool calls per session (safety limit, 0 = unlimited)
+  max_tool_calls: 200
+
   # Default timeout in seconds for all scan tools
   timeout: 120
 
   # Default TCP ports for port_scan (used as fallback if no ports specified)
   tcp_ports: "22,80,443,8080,3389,5900"
+
+# Findings Database (SQLite)
+findings:
+  enabled: true
+  db_path: "data/findings.db"
+  store_raw_output: false         # Don't store raw tool output (credential protection)
+  max_output_size: 10000          # Truncate raw_output at this size
+  retention_days: 90              # Auto-purge findings older than N days (0 = disabled)
+  backup_on_export: true          # Create backup before each export
+  strict: false                   # fail-closed on DB errors (for compliance contexts)

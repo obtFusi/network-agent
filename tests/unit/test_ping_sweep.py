@@ -7,7 +7,7 @@ Uses RFC 5737 TEST-NET addresses (192.0.2.0/24) for examples.
 
 import pytest
 from unittest.mock import patch, MagicMock
-from tools.network.ping_sweep import PingSweepTool
+from tools.recon.ping_sweep import PingSweepTool
 
 
 class TestPingSweepTool:
@@ -50,7 +50,7 @@ class TestPingSweepTool:
         result = tool.execute(network="192.168.1.0/24; rm -rf /")
         assert "Validation error" in result
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_execute_calls_nmap(self, mock_run, tool, mock_nmap_available):
         """Execute calls nmap with correct parameters."""
         # Mock successful nmap response
@@ -69,7 +69,7 @@ class TestPingSweepTool:
         assert "nmap" in call_args
         assert "192.0.2.0/28" in call_args
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_execute_icmp_mode(self, mock_run, tool, mock_nmap_available):
         """Execute uses ICMP ping sweep when raw sockets available."""
         mock_result = MagicMock()
@@ -83,7 +83,7 @@ class TestPingSweepTool:
         call_args = mock_run.call_args[0][0]
         assert "-sn" in call_args  # ICMP ping sweep flag
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_execute_tcp_mode(self, mock_run, tool, mock_nmap_available):
         """Execute uses TCP connect scan when specified."""
         mock_result = MagicMock()
@@ -96,7 +96,7 @@ class TestPingSweepTool:
         call_args = mock_run.call_args[0][0]
         assert "-sT" in call_args  # TCP connect scan flag
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_execute_returns_output(self, mock_run, tool, mock_nmap_available):
         """Execute returns nmap output."""
         mock_result = MagicMock()
@@ -112,7 +112,7 @@ class TestPingSweepTool:
         assert "192.0.2.1" in result
         assert "192.0.2.2" in result
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_execute_handles_timeout(self, mock_run, tool, mock_nmap_available):
         """Execute handles nmap timeout gracefully."""
         import subprocess
@@ -124,7 +124,7 @@ class TestPingSweepTool:
 
         assert "timeout" in result.lower()
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_execute_handles_error(self, mock_run, tool, mock_nmap_available):
         """Execute handles nmap errors gracefully."""
         mock_result = MagicMock()
@@ -137,7 +137,7 @@ class TestPingSweepTool:
 
         assert "Error" in result
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_network_normalization(self, mock_run, tool, mock_nmap_available):
         """Network address gets normalized."""
         # This test verifies that 192.168.1.100/24 gets normalized to 192.168.1.0/24
@@ -162,7 +162,7 @@ class TestHasRawSocketAccess:
     def tool(self):
         return PingSweepTool()
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_returns_true_when_ping_works(self, mock_run, tool):
         """Returns True when ICMP ping works."""
         mock_result = MagicMock()
@@ -171,7 +171,7 @@ class TestHasRawSocketAccess:
 
         assert tool._has_raw_socket_access() is True
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_returns_false_when_ping_fails(self, mock_run, tool):
         """Returns False when ICMP ping doesn't work."""
         mock_result = MagicMock()
@@ -180,7 +180,7 @@ class TestHasRawSocketAccess:
 
         assert tool._has_raw_socket_access() is False
 
-    @patch("tools.network.ping_sweep.subprocess.run")
+    @patch("tools.recon.ping_sweep.subprocess.run")
     def test_returns_false_on_exception(self, mock_run, tool):
         """Returns False when nmap throws exception."""
         mock_run.side_effect = Exception("nmap not found")

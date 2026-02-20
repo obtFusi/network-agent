@@ -1,7 +1,7 @@
 """Tests for tools/network/dns_lookup.py"""
 
 from unittest.mock import patch, MagicMock
-from tools.network.dns_lookup import DNSLookupTool
+from tools.recon.dns_lookup import DNSLookupTool
 
 
 class TestDNSLookupTool:
@@ -21,7 +21,7 @@ class TestDNSLookupTool:
     def test_parameters_has_record_type(self):
         assert "record_type" in self.tool.parameters["properties"]
 
-    @patch("tools.network.dns_lookup.dns.resolver.Resolver")
+    @patch("tools.recon.dns_lookup.dns.resolver.Resolver")
     def test_a_record_lookup(self, mock_resolver_class):
         mock_resolver = MagicMock()
         mock_resolver_class.return_value = mock_resolver
@@ -42,7 +42,7 @@ class TestDNSLookupTool:
         result = self.tool.execute("   ")
         assert "Error" in result
 
-    @patch("tools.network.dns_lookup.dns.resolver.Resolver")
+    @patch("tools.recon.dns_lookup.dns.resolver.Resolver")
     def test_auto_detects_ptr_for_ip(self, mock_resolver_class):
         mock_resolver = MagicMock()
         mock_resolver_class.return_value = mock_resolver
@@ -62,7 +62,7 @@ class TestDNSLookupTool:
 
     def test_record_type_case_insensitive(self):
         """Lowercase record types should work (LLMs send lowercase)."""
-        with patch("tools.network.dns_lookup.dns.resolver.Resolver") as mock:
+        with patch("tools.recon.dns_lookup.dns.resolver.Resolver") as mock:
             mock_instance = MagicMock()
             mock.return_value = mock_instance
             mock_answer = MagicMock()
@@ -74,7 +74,7 @@ class TestDNSLookupTool:
 
     def test_trailing_dot_normalized(self):
         """FQDN trailing dot should be normalized."""
-        with patch("tools.network.dns_lookup.dns.resolver.Resolver") as mock:
+        with patch("tools.recon.dns_lookup.dns.resolver.Resolver") as mock:
             mock_instance = MagicMock()
             mock.return_value = mock_instance
             mock_answer = MagicMock()
@@ -92,7 +92,7 @@ class TestDNSLookupTool:
         assert "Error" in result
         assert "Invalid record type" in result
 
-    @patch("tools.network.dns_lookup.dns.resolver.Resolver")
+    @patch("tools.recon.dns_lookup.dns.resolver.Resolver")
     def test_nxdomain_handled(self, mock_resolver_class):
         """NXDOMAIN should return friendly error."""
         import dns.resolver
@@ -105,7 +105,7 @@ class TestDNSLookupTool:
         assert "Error" in result
         assert "not found" in result
 
-    @patch("tools.network.dns_lookup.dns.resolver.Resolver")
+    @patch("tools.recon.dns_lookup.dns.resolver.Resolver")
     def test_timeout_handled(self, mock_resolver_class):
         """Timeout should return friendly error."""
         import dns.resolver

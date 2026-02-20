@@ -2,13 +2,13 @@
 
 from unittest.mock import patch, MagicMock
 import pytest
-from tools.network.service_detect import ServiceDetectTool
+from tools.recon.service_detect import ServiceDetectTool
 
 
 @pytest.fixture
 def mock_nmap_available():
     """Mock nmap availability check."""
-    with patch("tools.network.service_detect.require_nmap") as mock:
+    with patch("tools.recon.service_detect.require_nmap") as mock:
         mock.return_value = (True, "")
         yield mock
 
@@ -62,13 +62,13 @@ class TestServiceDetectTool:
 
     def test_intensity_valid_range(self, mock_nmap_available):
         """Valid intensity values should work."""
-        with patch("tools.network.service_detect.subprocess.run") as mock_run:
+        with patch("tools.recon.service_detect.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             for i in [1, 5, 9]:
                 result = self.tool.execute("127.0.0.1", intensity=i)
                 assert "Validation error" not in result
 
-    @patch("tools.network.service_detect.subprocess.run")
+    @patch("tools.recon.service_detect.subprocess.run")
     def test_uses_version_detection(self, mock_run, mock_nmap_available):
         """Should use -sV flag for version detection."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -76,7 +76,7 @@ class TestServiceDetectTool:
         cmd = mock_run.call_args[0][0]
         assert "-sV" in cmd
 
-    @patch("tools.network.service_detect.subprocess.run")
+    @patch("tools.recon.service_detect.subprocess.run")
     def test_uses_version_intensity(self, mock_run, mock_nmap_available):
         """Should use --version-intensity flag."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -84,7 +84,7 @@ class TestServiceDetectTool:
         cmd = mock_run.call_args[0][0]
         assert "--version-intensity=7" in cmd
 
-    @patch("tools.network.service_detect.subprocess.run")
+    @patch("tools.recon.service_detect.subprocess.run")
     def test_default_top_20_ports(self, mock_run, mock_nmap_available):
         """Without ports param, should use --top-ports 20."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -94,7 +94,7 @@ class TestServiceDetectTool:
         idx = cmd.index("--top-ports")
         assert cmd[idx + 1] == "20"
 
-    @patch("tools.network.service_detect.subprocess.run")
+    @patch("tools.recon.service_detect.subprocess.run")
     def test_skip_discovery_flag(self, mock_run, mock_nmap_available):
         """skip_discovery should add -Pn flag."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
@@ -102,14 +102,14 @@ class TestServiceDetectTool:
         cmd = mock_run.call_args[0][0]
         assert "-Pn" in cmd
 
-    @patch("tools.network.service_detect.subprocess.run")
+    @patch("tools.recon.service_detect.subprocess.run")
     def test_warning_pn_with_network(self, mock_run, mock_nmap_available):
         """Warning when using -Pn with network range."""
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
         result = self.tool.execute("127.0.0.0/30", skip_discovery=True)
         assert "Warning" in result
 
-    @patch("tools.network.service_detect.subprocess.run")
+    @patch("tools.recon.service_detect.subprocess.run")
     def test_successful_scan(self, mock_run, mock_nmap_available):
         """Successful scan should return results."""
         mock_run.return_value = MagicMock(
