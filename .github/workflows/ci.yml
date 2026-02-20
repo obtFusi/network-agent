@@ -83,15 +83,18 @@ jobs:
           fi
       # Secret scanning
       - name: Run gitleaks secret scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          GITLEAKS_VERSION="8.24.3"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar xz -C /usr/local/bin gitleaks
+          gitleaks detect --source . --report-format json --report-path gitleaks-report.json --no-banner
+          echo "gitleaks: no secrets found"
       # SBOM generation (CycloneDX)
       - name: Generate SBOM
         run: |
           pip install -r requirements.txt
           cyclonedx-py environment -o sbom.json --output-format json
       - name: Upload SBOM
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: sbom
