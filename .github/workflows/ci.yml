@@ -61,6 +61,8 @@ jobs:
     needs: lint
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Full history needed for gitleaks diff scan
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
