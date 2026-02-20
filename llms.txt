@@ -1,43 +1,63 @@
 # Network Agent
 
-> KI-gesteuerter Netzwerk-Scanner mit LLM-Integration. Kombiniert nmap, masscan und andere Tools mit natürlicher Sprache.
+> AI-powered network scanner with LLM integration. Combines nmap, impacket, scapy and other tools with natural language for security assessments.
 
 ## Quick Start
 - [README.md](README.md): Installation, Usage, Docker, CLI Examples
 - [CHANGELOG.md](CHANGELOG.md): Version History
+- [CONTRIBUTING.md](CONTRIBUTING.md): How to Contribute
 
-## Core (Agent-Logik)
-- [cli.py](cli.py): Entry Point, REPL-Mode, `--serve` für HTTP API
-- [agent/core.py](agent/core.py): NetworkAgent Klasse, Session Memory, Tool-Execution
-- [agent/llm.py](agent/llm.py): LLM Client (OpenAI-kompatibel, Groq, Ollama)
+## Core (Agent Logic)
+- [cli.py](cli.py): Entry Point, REPL-Mode, `--serve` for HTTP API
+- [agent/core.py](agent/core.py): NetworkAgent class, Session Memory, Tool-Execution, Authorization Enforcement
+- [agent/llm.py](agent/llm.py): LLM Client (OpenAI-compatible, Groq, Ollama)
 
-## Tools (Netzwerk-Scanning)
-- [tools/base.py](tools/base.py): Tool Base-Klasse, Registry
-- [tools/network/ping_sweep.py](tools/network/ping_sweep.py): Host-Discovery via nmap
-- [tools/network/port_scanner.py](tools/network/port_scanner.py): Port-Scanning
-- [tools/network/service_detect.py](tools/network/service_detect.py): Service/Version Detection
-- [tools/network/dns_lookup.py](tools/network/dns_lookup.py): DNS-Abfragen
-- [tools/web/web_search.py](tools/web/web_search.py): SearXNG Web-Suche
+## Tools (Attack-Chain Architecture)
+- [tools/base.py](tools/base.py): BaseTool ABC with authorization_level, category, target_fields, report_finding()
+- [tools/authorization.py](tools/authorization.py): 3-Tier Authorization (passive/active/destructive)
+- [tools/scope.py](tools/scope.py): Scope Enforcement (--scope-file CIDR/host allowlist)
+- [tools/findings_store.py](tools/findings_store.py): SQLite Findings Database (WAL, thread-safe, credential redaction)
+- [tools/findings_export.py](tools/findings_export.py): Export to JSON, CSV, HTML with SHA256 integrity
+
+### Recon (passive)
+- [tools/recon/ping_sweep.py](tools/recon/ping_sweep.py): Host-Discovery via nmap
+- [tools/recon/port_scanner.py](tools/recon/port_scanner.py): Port-Scanning
+- [tools/recon/service_detect.py](tools/recon/service_detect.py): Service/Version Detection
+- [tools/recon/dns_lookup.py](tools/recon/dns_lookup.py): DNS Queries
+
+### Other Attack Phases (v0.13+)
+- [tools/poison/](tools/poison/): LLMNR/NBT-NS Poisoning, ARP Spoofing
+- [tools/enum/](tools/enum/): LDAP, SMB, SNMP, ADCS, GPO Enumeration
+- [tools/harvest/](tools/harvest/): Kerberoasting, SMB Relay, Password Spray
+- [tools/lateral/](tools/lateral/): Pass-the-Hash, WMI Exec, WinRM Exec
+- [tools/persist/](tools/persist/): Golden Ticket, ADCS Persistence
+- [tools/compliance/](tools/compliance/): Reports, Attack Chain Summary
+
+### OSINT
+- [tools/web/web_search.py](tools/web/web_search.py): SearXNG Web Search
 
 ## Configuration
-- [config/settings.yaml](config/settings.yaml): LLM-Provider, Tool-Settings
+- [config/settings.yaml](config/settings.yaml): LLM-Provider, Authorization, Findings, Tool-Settings
 - [config/prompts/system.md](config/prompts/system.md): System Prompt Template
 
-## HTTP API (ab v0.9)
+## HTTP API
 - [agent/api/](agent/api/): FastAPI Server (`python cli.py --serve`)
+- [agent/api/routers/findings.py](agent/api/routers/findings.py): GET /api/v1/findings, /scan-runs, /export
 
 ## Tests
 - [tests/unit/](tests/unit/): Unit Tests (pytest)
-- [tests/conftest.py](tests/conftest.py): Test Fixtures
+- [tests/integration/](tests/integration/): Integration Tests (Docker Compose Pentest Lab)
+- [tests/api/](tests/api/): API Endpoint Tests
 
-## Infrastructure (Appliance)
-- [infrastructure/docker/](infrastructure/docker/): Docker Compose Stack
-- [infrastructure/packer/](infrastructure/packer/): Proxmox qcow2 Build
-- [docs/CICD.md](docs/CICD.md): CI/CD Pipeline Dokumentation
+## Infrastructure
+- [docker-compose.pentest-lab.yml](docker-compose.pentest-lab.yml): 7 Vulnerable Services for Testing
+- [infrastructure/docker/](infrastructure/docker/): Docker Compose Production Stack
+- [infrastructure/packer/](infrastructure/packer/): Proxmox qcow2 Appliance Build
 
-## Compliance
-- [docs/compliance/](docs/compliance/): ISO 27001, NIS2, BSI IT-Grundschutz Mappings
+## Security
+- [SECURITY.md](SECURITY.md): Vulnerability Reporting, Response Timeline
+- [.gitleaks.toml](.gitleaks.toml): Secret Scanning Configuration
 
 ## Development
-- [.claude/CLAUDE.md](.claude/CLAUDE.md): Claude Code Projekt-Regeln
-- [.github/workflows/](./github/workflows/): CI (lint, test, security, docker)
+- [.claude/CLAUDE.md](.claude/CLAUDE.md): Claude Code Project Rules
+- [.github/workflows/ci.yml](.github/workflows/ci.yml): CI Pipeline (lint, test, security, docker)
