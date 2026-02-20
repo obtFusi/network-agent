@@ -5,3 +5,7 @@ __pycache__/
 docs/VISION.md
 .claude/settings.local.json
 infrastructure/build-status.json
+data/
+*.db
+bandit-report.json
+sbom.json
