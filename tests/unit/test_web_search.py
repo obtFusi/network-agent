@@ -142,9 +142,15 @@ class TestWebSearchTypeGuards:
         assert "Validation error" in result
         assert "query must be string" in result
 
-    def test_max_results_not_int_rejected(self):
-        """Test non-int max_results is rejected."""
+    def test_max_results_string_number_coerced(self):
+        """Test string max_results is coerced to int (LLM sends strings)."""
         result = self.tool.execute(query="test", max_results="5")
+        # Should not be a validation error - coercion handles this
+        assert "Validation error" not in result
+
+    def test_max_results_non_numeric_string_rejected(self):
+        """Test non-numeric string max_results is rejected."""
+        result = self.tool.execute(query="test", max_results="abc")
         assert "Validation error" in result
         assert "max_results must be integer" in result
 
