@@ -6,7 +6,7 @@ import { ApprovalQueue } from '@/components/ApprovalQueue';
 
 export function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/cicd-dashboard">
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<PipelineList />} />
