@@ -67,11 +67,16 @@ class WebSearchTool(BaseTool):
         if not isinstance(query, str):
             return f"Validation error: query must be string, got {type(query).__name__}"
         if max_results is not None:
-            if type(max_results) is not int:
-                return (
-                    f"Validation error: max_results must be integer, "
-                    f"got {type(max_results).__name__}"
-                )
+            if isinstance(max_results, bool):
+                return "Validation error: max_results must be integer, got bool"
+            if not isinstance(max_results, int):
+                try:
+                    max_results = int(max_results)
+                except (ValueError, TypeError):
+                    return (
+                        f"Validation error: max_results must be integer, "
+                        f"got {type(max_results).__name__}"
+                    )
             if max_results < 1:
                 return f"Validation error: max_results must be >= 1, got {max_results}"
         if not isinstance(categories, str):
