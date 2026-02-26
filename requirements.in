@@ -2,7 +2,7 @@
 # Generated lock file: pip-compile --generate-hashes --allow-unsafe requirements.in
 
 # LLM Client
-openai==2.21.0
+openai==2.24.0
 
 # Configuration
 pyyaml==6.0.3
