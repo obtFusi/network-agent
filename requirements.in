@@ -18,7 +18,7 @@ httpx==0.28.1
 # HTTP API Server
 fastapi==0.129.0
 starlette==0.52.1
-uvicorn[standard]==0.41.0
+uvicorn[standard]==0.42.0
 
 # Logging
 structlog==25.5.0
