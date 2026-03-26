@@ -597,9 +597,9 @@ markupsafe==3.0.3 \
     #   flask
     #   jinja2
     #   werkzeug
-openai==2.21.0 \
-    --hash=sha256:0bc1c775e5b1536c294eded39ee08f8407656537ccc71b1004104fe1602e267c \
-    --hash=sha256:81b48ce4b8bbb2cc3af02047ceb19561f7b1dc0d4e52d1de7f02abfd15aa59b7
+openai==2.30.0 \
+    --hash=sha256:92f7661c990bda4b22a941806c83eabe4896c3094465030dd882a71abe80c885 \
+    --hash=sha256:9a5ae616888eb2748ec5e0c5b955a51592e0b201a11f4262db920f2a78c5231d
     # via -r requirements.in
 pyasn1==0.6.2 \
     --hash=sha256:1eb26d860996a18e9b6ed05e7aae0e9fc21619fcee6af91cca9bad4fbea224bf \
