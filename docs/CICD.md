@@ -1285,3 +1285,7 @@ Without this setting the monitors show the GitHub status without runner metrics.
 The dashboard updater writes the build-status JSON beside the local dashboard.
 Export `NETWORK_AGENT_BUILD_STATUS_FILE` when the dashboard is served from a
 different tree.
+
+For a new runner container, export `NETWORK_AGENT_RUNNER_HOSTNAME` and
+`NETWORK_AGENT_RUNNER_VMID` in the shell on the Proxmox host before running
+`create-runner-lxc.sh`. Select a free container ID for the target host.
