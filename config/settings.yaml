@@ -40,7 +40,7 @@ scan:
   # Example:
   # exclude_ips:
   #   - "192.168.1.0/24"    # Exclude entire subnet
-  #   - "10.0.0.5"          # Exclude single IP
+  #   - "192.0.2.10"          # Exclude single IP
 
   # Authorization level: passive (default), active, destructive
   # CLI flag --i-have-written-authorization overrides this to "active"
