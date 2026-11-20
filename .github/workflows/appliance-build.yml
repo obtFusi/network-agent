@@ -267,7 +267,9 @@ jobs:
           cp infrastructure/scripts/install-network-agent.sh infrastructure/packer/output/
           cp infrastructure/scripts/repair-appliance-v0.9.0.sh infrastructure/packer/output/
           cd infrastructure/packer/output
-          sed -i "s/VERSION:-0.4.0/VERSION:-${VERSION_CLEAN}/" install-network-agent.sh
+          [[ "$VERSION_CLEAN" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?(\+[A-Za-z0-9.-]+)?$ ]]
+          sed -i "s/^PACKAGED_VERSION=\"\"$/PACKAGED_VERSION=\"${VERSION_CLEAN}\"/" install-network-agent.sh
+          grep -Fxq "PACKAGED_VERSION=\"${VERSION_CLEAN}\"" install-network-agent.sh
           sha256sum install-network-agent.sh repair-appliance-v0.9.0.sh > SHA256SUMS.scripts
 
       # ═══════════════════════════════════════════════════════════

@@ -7,10 +7,11 @@
 
 set -euo pipefail
 
-VERSION="${VERSION:-0.4.0}"
+PACKAGED_VERSION=""
+VERSION="${VERSION:-$PACKAGED_VERSION}"
+VERSION="${VERSION#v}"
 VMID="${1:-}"
 STORAGE="${2:-local-lvm}"
-BASE_URL="https://github.com/obtFusi/network-agent/releases/download/v${VERSION}"
 
 # Colors
 RED='\033[0;31m'
@@ -45,10 +46,16 @@ if [[ -z "$VMID" ]]; then
     echo "  $0 200 ceph-pool          # Create VM 200 on ceph-pool"
     echo ""
     echo "Environment Variables:"
-    echo "  VERSION: Appliance version (default: ${VERSION})"
+    echo "  VERSION: Appliance release to install. Released installers select their own version."
     echo ""
     exit 1
 fi
+[[ "$VMID" =~ ^[1-9][0-9]*$ ]] || error "Specify a numeric VM ID."
+[[ "$STORAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || error "Specify a valid Proxmox storage name."
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?(\+[A-Za-z0-9.-]+)?$ ]] ||
+    error "Set VERSION to a published appliance version or use the installer from that release."
+[[ "$VERSION" != "0.9.0" ]] || error "Appliance v0.9.0 was withdrawn. Select a supported release."
+BASE_URL="https://github.com/obtFusi/network-agent/releases/download/v${VERSION}"
 
 # 2. Check Proxmox
 info "Checking Proxmox environment..."
@@ -89,25 +96,20 @@ for tool in curl zstd sha256sum jq; do
         apt-get update -qq && apt-get install -y -qq "$tool"
     fi
 done
-
-# aria2c is special - command is aria2c but package is aria2
-if ! command -v aria2c &>/dev/null; then
-    warn "Installing aria2 for fast parallel downloads..."
-    apt-get update -qq && apt-get install -y -qq aria2
-fi
+command -v qemu-img >/dev/null || error "qemu-img is required to check the downloaded appliance."
 
 # 6. Create temp directory
 # Use TMPDIR env var if set, otherwise /var/tmp (not /tmp which is often tmpfs)
 TEMP_BASE="${TMPDIR:-/var/tmp}"
-TMPDIR=$(mktemp -d -p "$TEMP_BASE" network-agent-XXXXXX)
-trap "rm -rf $TMPDIR" EXIT
-cd "$TMPDIR"
-info "Working directory: $TMPDIR"
+workdir=$(mktemp -d -p "$TEMP_BASE" network-agent-XXXXXX)
+trap 'rm -rf -- "$workdir"' EXIT
+cd -- "$workdir"
+info "Working directory: $workdir"
 
 # Check temp directory has enough space
 # Peak requirement: ~27GB parts + ~50GB decompressed = ~77GB
 REQUIRED_TEMP_GB=78
-TMPDIR_FREE=$(df -BG "$TMPDIR" | awk 'NR==2 {gsub(/G/,"",$4); print $4}')
+TMPDIR_FREE=$(df -BG "$workdir" | awk 'NR==2 {gsub(/G/,"",$4); print $4}')
 if [[ "$TMPDIR_FREE" -lt "$REQUIRED_TEMP_GB" ]]; then
     error "Not enough temp space: ${TMPDIR_FREE}GB available, ${REQUIRED_TEMP_GB}GB required.
 
@@ -129,48 +131,52 @@ echo "    Source: $BASE_URL"
 echo ""
 
 # Download SHA256SUMS first
-if ! curl -# -fL -o "SHA256SUMS" "$BASE_URL/SHA256SUMS"; then
+if ! curl --proto '=https' --proto-redir '=https' -# -fL -o "SHA256SUMS" "$BASE_URL/SHA256SUMS"; then
     error "Failed to download SHA256SUMS. Check if version v${VERSION} exists."
 fi
 
-# Parse expected parts from SHA256SUMS
-PARTS=$(grep -oE 'part-[a-z]{2}' SHA256SUMS | sort -u)
-PART_COUNT=$(echo "$PARTS" | wc -l)
-
-log "Downloading $PART_COUNT parts with aria2c (parallel)..."
-
-# Create aria2c input file for batch download
-ARIA2_INPUT=$(mktemp)
-for part in $PARTS; do
-    FILE="network-agent-${VERSION}.qcow2.zst.${part}"
-    echo "$BASE_URL/$FILE" >> "$ARIA2_INPUT"
-    echo "  out=$FILE" >> "$ARIA2_INPUT"
+# Validate all manifest entries before using any file name.
+declare -A manifest_parts=()
+part_prefix="network-agent-${VERSION}.qcow2.zst.part-"
+while read -r checksum file extra || [[ -n "$checksum$file$extra" ]]; do
+    file="${file#\*}"
+    suffix="${file#"$part_prefix"}"
+    if [[ ! "$checksum" =~ ^[0-9a-fA-F]{64}$ || -n "$extra" ||
+          "$file" != "$part_prefix"* || ! "$suffix" =~ ^[a-z]{2}$ ]]; then
+        error "Invalid appliance checksum manifest."
+    fi
+    [[ ! -v 'manifest_parts[$suffix]' ]] || error "Duplicate appliance part in checksum manifest."
+    manifest_parts["$suffix"]="$file"
+done < SHA256SUMS
+part_count=${#manifest_parts[@]}
+(( part_count > 0 )) || error "No appliance parts listed in checksum manifest."
+parts=()
+alphabet=abcdefghijklmnopqrstuvwxyz
+for (( index=0; index<part_count; index++ )); do
+    suffix="${alphabet:index/26:1}${alphabet:index%26:1}"
+    [[ -v 'manifest_parts[$suffix]' ]] || error "Missing appliance part in checksum manifest."
+    parts+=("${manifest_parts[$suffix]}")
 done
 
-# Download all parts in parallel with 16 connections per file
-if aria2c -x 16 -s 16 -j 4 --console-log-level=warn --summary-interval=10 \
-    --file-allocation=none -i "$ARIA2_INPUT" 2>&1; then
-    rm -f "$ARIA2_INPUT"
-    log "All $PART_COUNT parts downloaded"
-    # Show sizes
-    for part in $PARTS; do
-        FILE="network-agent-${VERSION}.qcow2.zst.${part}"
-        if [[ -f "$FILE" ]]; then
-            SIZE=$(du -h "$FILE" | cut -f1)
-            echo "  [✓] ${FILE} ($SIZE)"
-        else
-            error "Download failed: $FILE"
-        fi
-    done
+if command -v aria2c >/dev/null; then
+    log "Downloading $part_count parts with aria2c (parallel)..."
+    for file in "${parts[@]}"; do
+        printf '%s\n  out=%s\n' "$BASE_URL/$file" "$file"
+    done > aria2-input.txt
+    aria2c -x 16 -s 16 -j 4 --console-log-level=warn --summary-interval=10 \
+        --file-allocation=none -i aria2-input.txt || error "Download failed. Check the network and retry."
 else
-    rm -f "$ARIA2_INPUT"
-    error "Download failed. Check network connection and retry."
+    log "Downloading $part_count parts with curl..."
+    for file in "${parts[@]}"; do
+        curl --proto '=https' --proto-redir '=https' -# -fL -o "$file" "$BASE_URL/$file" ||
+            error "Download failed: $file"
+    done
 fi
 
 # 8. Verify checksums
 echo ""
 info "Verifying checksums..."
-if sha256sum -c SHA256SUMS --quiet 2>/dev/null; then
+if sha256sum -c SHA256SUMS --strict --quiet 2>/dev/null; then
     log "All checksums verified"
 else
     error "Checksum verification failed! Download may be corrupted."
@@ -184,13 +190,20 @@ echo "    Using streaming decompression to minimize disk usage..."
 
 # Stream decompress: parts -> zstd -> qcow2 (no intermediate file)
 # This saves ~27GB disk space compared to creating .zst first
-if cat network-agent-*.qcow2.zst.part-* | zstd -d -o network-agent.qcow2; then
+if cat -- "${parts[@]}" | zstd -d -o network-agent.qcow2; then
     FINAL_SIZE=$(du -h network-agent.qcow2 | cut -f1)
     log "Decompressed: $FINAL_SIZE"
     # Remove parts after successful decompression
-    rm -f network-agent-*.qcow2.zst.part-*
+    rm -f -- "${parts[@]}"
 else
     error "Decompression failed"
+fi
+if ! image_info=$(qemu-img info -f qcow2 --output=json network-agent.qcow2) ||
+    ! jq -e '.format == "qcow2" and .["virtual-size"] > 0 and
+             .["backing-filename"] == null and .["full-backing-filename"] == null and
+             .["format-specific"].data["data-file"] == null' >/dev/null <<< "$image_info" ||
+    ! qemu-img check -q -f qcow2 network-agent.qcow2; then
+    error "The downloaded appliance is not a self-contained, valid QCOW2 image."
 fi
 
 # 10. Create VM
@@ -215,8 +228,7 @@ log "VM $VMID created"
 info "Importing disk to $STORAGE..."
 echo "    This may take a few minutes..."
 
-IMPORT_OUTPUT=$(qm importdisk "$VMID" network-agent.qcow2 "$STORAGE" --format qcow2 2>&1)
-if [[ $? -ne 0 ]]; then
+if ! IMPORT_OUTPUT=$(qm importdisk "$VMID" network-agent.qcow2 "$STORAGE" --format qcow2 2>&1); then
     error "Disk import failed: $IMPORT_OUTPUT"
 fi
 log "Disk imported to $STORAGE"
@@ -264,7 +276,8 @@ echo "╚═══════════════════════�
 echo ""
 
 # Optional: Ask to start VM
-read -p "Start VM $VMID now? [y/N] " -n 1 -r
+REPLY=""
+read -p "Start VM $VMID now? [y/N] " -n 1 -r || true
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     info "Starting VM $VMID..."
