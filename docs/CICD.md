@@ -1273,3 +1273,15 @@ User: "Implement new feature X"
 ---
 
 *This documentation is SSOT for the CI/CD pipeline of the Network Agent project.*
+
+### Local build status and runner telemetry
+
+The local build monitors read GitHub Actions status with the installed `gh` CLI.
+Export `NETWORK_AGENT_BUILD_SSH_TARGET` from your private configuration to include
+runner logs and metrics. Use an OpenSSH alias with its operator identity and a
+trusted host key, or `user@alias` if the alias does not select the operator.
+Without this setting the monitors show the GitHub status without runner metrics.
+
+The dashboard updater writes the build-status JSON beside the local dashboard.
+Export `NETWORK_AGENT_BUILD_STATUS_FILE` when the dashboard is served from a
+different tree.
