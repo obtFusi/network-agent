@@ -354,7 +354,7 @@ appliance-builds/
 
 | Aspect | Value |
 |--------|-------|
-| Server | 10.0.0.165:9000 (Proxmox LXC 160) |
+| Server | Deployment-specific `MINIO_ENDPOINT` |
 | Bucket | `appliance-builds` (temp, auto-cleanup) |
 | Transfer Speed | ~100 MB/s (LAN) vs ~5 MB/s (GitHub Artifacts) |
 
@@ -392,8 +392,7 @@ gh workflow run docker-build.yml -f version=0.9.0
 
 ### 2.8 Self-hosted Runner
 
-**Location:** The configured Proxmox runner container.
-**Host:** 10.0.0.69 (Proxmox)
+Use the runner SSH alias from the private deployment configuration as `RUNNER_SSH`.
 
 | Resource | Value |
 |----------|-------|
@@ -428,8 +427,7 @@ gh api /repos/obtFusi/network-agent/actions/runners --jq '.runners[]'
 
 ### 2.9 MinIO Artifact Storage
 
-**Location:** Proxmox LXC 160 (`minio`)
-**IP:** 10.0.0.165
+Use `PVE_SSH` for the private Proxmox SSH alias and `MINIO_CT_ID` for the configured container.
 **Ports:** 9000 (API), 9001 (Console)
 
 | Resource | Value |
@@ -453,26 +451,25 @@ gh api /repos/obtFusi/network-agent/actions/runners --jq '.runners[]'
 
 ```bash
 # Check MinIO status
-ssh root@10.0.0.69 "pct exec 160 -- systemctl status minio"
+ssh "${PVE_SSH:?Set PVE_SSH}" "pct exec ${MINIO_CT_ID:?Set MINIO_CT_ID} -- systemctl status minio"
 
 # View bucket contents
-ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc ls local/appliance-builds/"
+ssh "${PVE_SSH:?Set PVE_SSH}" "pct exec ${MINIO_CT_ID:?Set MINIO_CT_ID} -- /usr/local/bin/mc ls local/appliance-builds/"
 
 # Manual cleanup
-ssh root@10.0.0.69 "pct exec 160 -- /usr/local/bin/mc rm --recursive --force local/appliance-builds/OLD_VERSION/"
+ssh "${PVE_SSH:?Set PVE_SSH}" "pct exec ${MINIO_CT_ID:?Set MINIO_CT_ID} -- /usr/local/bin/mc rm --recursive --force local/appliance-builds/OLD_VERSION/"
 
-# Console (Web UI)
-# http://10.0.0.165:9001 (minioadmin / [see Secrets])
+# Use the console URL and scoped account from the private deployment configuration.
 ```
 
 **Troubleshooting:**
 
 | Problem | Solution |
 |---------|----------|
-| MinIO not reachable | `pct start 160` on Proxmox |
+| MinIO not reachable | Start the `MINIO_CT_ID` container on the configured Proxmox host |
 | Upload fails | Check secrets, test network |
 | Bucket full | `mc rm --recursive minio/appliance-builds/OLD_VERSION/` |
-| Credentials forgotten | `ssh root@10.0.0.69 "pct exec 160 -- cat /etc/minio.env"` |
+| Credentials unavailable | Recover the scoped credentials from the project credential store. |
 
 ---
 

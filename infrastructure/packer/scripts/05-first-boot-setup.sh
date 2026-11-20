@@ -13,6 +13,7 @@ cat > /etc/systemd/system/network-agent-first-boot.service << 'EOF'
 Description=Network Agent First Boot Setup
 Documentation=https://github.com/obtFusi/network-agent
 After=network-online.target docker.service
+Before=getty@tty1.service
 Wants=network-online.target
 Requires=docker.service
 ConditionPathExists=!/var/lib/network-agent/.initialized
@@ -21,12 +22,13 @@ ConditionPathExists=!/var/lib/network-agent/.initialized
 Type=oneshot
 RemainAfterExit=no
 ExecStart=/opt/network-agent/first-boot.sh
-StandardInput=tty
+StandardInput=null
 StandardOutput=tty
 StandardError=tty
 TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes
+TTYVTDisallocate=no
 
 [Install]
 WantedBy=multi-user.target
@@ -72,10 +74,9 @@ cat > /etc/motd << 'EOF'
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
 ║  First Boot:                                                     ║
-║    If this is your first login, the setup wizard will start.    ║
-║    You'll be asked to:                                           ║
-║      1. Set a new root password                                  ║
-║      2. Save the generated web credentials                       ║
+║    The VM console displays a unique one-time setup password.     ║
+║    Sign in as root locally and change the password with passwd.  ║
+║    Read the web credentials from the root-only credentials file. ║
 ║                                                                  ║
 ║  After Setup:                                                    ║
 ║    Web Interface:  https://<IP>  (credentials from first boot)  ║
@@ -90,23 +91,10 @@ cat > /etc/motd << 'EOF'
 
 EOF
 
-# Configure auto-login for first boot (to run first-boot script)
+# Preserve the initial credential prompt on the console until the operator can
+# read it. The getty prompts for authentication from its very first invocation.
 mkdir -p /etc/systemd/system/getty@tty1.service.d/
-cat > /etc/systemd/system/getty@tty1.service.d/override.conf << 'EOF'
+cat > /etc/systemd/system/getty@tty1.service.d/90-network-agent-console.conf << 'EOF'
 [Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
+TTYVTDisallocate=no
 EOF
-
-# Run first-boot on login (as fallback if systemd service doesn't trigger)
-# Only run on interactive TTY sessions (not SSH provisioning)
-cat >> /root/.bashrc << 'EOF'
-
-# Network Agent first-boot check
-# Only run on real TTY (tty1), not SSH sessions or Packer provisioning
-if [[ ! -f /var/lib/network-agent/.initialized ]] && [[ $(tty) == /dev/tty1 ]]; then
-    /opt/network-agent/first-boot.sh
-fi
-EOF
-
-echo "=== MOTD and auto-login configured ==="

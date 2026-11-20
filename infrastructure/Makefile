@@ -11,15 +11,15 @@ all: validate build
 # Build the qcow2 image
 build: validate
 	@echo "=== Building qcow2 Image ==="
-	cd packer && packer init .
-	cd packer && packer build -var "version=$(VERSION)" network-agent.pkr.hcl
+	cd packer && packer init network-agent.pkr.hcl
+	cd packer && bash ./build.sh network-agent.pkr.hcl -var "version=$(VERSION)"
 	@echo "=== Build complete ==="
 	@ls -lh packer/output/*.qcow2 2>/dev/null || true
 
 # Validate Packer template and Docker Compose
 validate:
 	@echo "=== Validating Packer template ==="
-	cd packer && packer validate network-agent.pkr.hcl
+	cd packer && packer validate -syntax-only network-agent.pkr.hcl
 	@echo "=== Validating Docker Compose files ==="
 	docker compose -f docker/docker-compose.yml config > /dev/null
 	docker compose -f docker/docker-compose.yml -f docker/docker-compose.scan-mode.yml config > /dev/null

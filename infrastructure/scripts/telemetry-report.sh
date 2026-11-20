@@ -8,12 +8,10 @@
 #   ./telemetry-report.sh compare V1 V2   # Compare two versions
 #   ./telemetry-report.sh history N       # Show last N builds
 
+set +x
 set -euo pipefail
+umask 077
 
-# Configuration (can be overridden via environment)
-MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://10.0.0.165:9000}"
-MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-}"
-MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-}"
 TELEMETRY_BUCKET="${TELEMETRY_BUCKET:-appliance-telemetry}"
 
 # Colors
@@ -25,17 +23,39 @@ NC='\033[0m' # No Color
 
 # Check for mc client
 setup_mc() {
-    if ! command -v mc &> /dev/null; then
-        echo "Installing MinIO client..."
-        wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /tmp/mc
-        chmod +x /tmp/mc
-        MC="/tmp/mc"
-    else
-        MC="mc"
+    local name
+    for name in MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY; do
+        if [[ -z "${!name:-}" ]]; then
+            printf 'Set %s in the private telemetry environment.\n' "$name" >&2
+            return 1
+        fi
+    done
+
+    local existing_config="${MC_CONFIG_DIR:-$HOME/.mc}"
+    REPORT_DIR=$(mktemp -d)
+    trap 'rm -rf -- "$REPORT_DIR"' EXIT
+    export MC_CONFIG_DIR="$REPORT_DIR/mc"
+    if [[ -d "$existing_config/certs/CAs" ]]; then
+        mkdir -p "$MC_CONFIG_DIR/certs/CAs"
+        cp -a "$existing_config/certs/CAs/." "$MC_CONFIG_DIR/certs/CAs/"
     fi
 
-    # Configure alias
-    $MC alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" &>/dev/null
+    if ! MC=$(command -v mc); then
+        MC="$REPORT_DIR/mc-bin"
+        if ! wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O "$MC"; then
+            printf '%s\n' 'MinIO Client is unavailable. Install mc and rerun the report.' >&2
+            return 1
+        fi
+        chmod 700 "$MC"
+    fi
+
+    export -n MINIO_ACCESS_KEY MINIO_SECRET_KEY
+    if ! printf '%s\n' "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" |
+        "$MC" alias set minio "$MINIO_ENDPOINT" >/dev/null 2>&1; then
+        printf '%s\n' 'MinIO connection failed. Check the endpoint, credentials and trusted CA.' >&2
+        return 1
+    fi
+    unset MINIO_ACCESS_KEY MINIO_SECRET_KEY
 }
 
 # List all available telemetry
@@ -43,12 +63,12 @@ cmd_list() {
     setup_mc
     echo -e "${BLUE}Available Telemetry Data:${NC}"
     echo "═══════════════════════════════════════════════════════════════════════"
-    $MC ls minio/$TELEMETRY_BUCKET/ --recursive 2>/dev/null | grep ".json" | while read -r line; do
+    "$MC" ls minio/$TELEMETRY_BUCKET/ --recursive 2>/dev/null | grep ".json" | while read -r line; do
         echo "  $line"
     done
     echo ""
     echo -e "${BLUE}Latest builds:${NC}"
-    $MC ls minio/$TELEMETRY_BUCKET/latest/ 2>/dev/null || echo "  No latest data found"
+    "$MC" ls minio/$TELEMETRY_BUCKET/latest/ 2>/dev/null || echo "  No latest data found"
 }
 
 # Show latest telemetry
@@ -60,15 +80,15 @@ cmd_latest() {
     echo "═══════════════════════════════════════════════════════════════════════"
 
     # Download latest telemetry
-    local LATEST=$($MC ls minio/$TELEMETRY_BUCKET/latest/ 2>/dev/null | grep "${TYPE}_" | tail -1 | awk '{print $NF}')
+    local LATEST=$("$MC" ls minio/$TELEMETRY_BUCKET/latest/ 2>/dev/null | grep "${TYPE}_" | tail -1 | awk '{print $NF}')
 
     if [[ -z "$LATEST" ]]; then
         echo -e "${RED}No telemetry data found${NC}"
         exit 1
     fi
 
-    local TMP=$(mktemp)
-    $MC cat "minio/$TELEMETRY_BUCKET/latest/$LATEST" > "$TMP" 2>/dev/null
+    local TMP="$REPORT_DIR/latest.json"
+    "$MC" cat "minio/$TELEMETRY_BUCKET/latest/$LATEST" > "$TMP" 2>/dev/null
 
     if command -v jq &> /dev/null; then
         echo ""
@@ -136,11 +156,11 @@ cmd_compare() {
     echo -e "${BLUE}Comparing $V1 vs $V2:${NC}"
     echo "═══════════════════════════════════════════════════════════════════════"
 
-    local TMP1=$(mktemp)
-    local TMP2=$(mktemp)
+    local TMP1="$REPORT_DIR/first.json"
+    local TMP2="$REPORT_DIR/second.json"
 
-    $MC cat "minio/$TELEMETRY_BUCKET/latest/build_${V1}.json" > "$TMP1" 2>/dev/null || { echo "Cannot find telemetry for $V1"; exit 1; }
-    $MC cat "minio/$TELEMETRY_BUCKET/latest/build_${V2}.json" > "$TMP2" 2>/dev/null || { echo "Cannot find telemetry for $V2"; exit 1; }
+    "$MC" cat "minio/$TELEMETRY_BUCKET/latest/build_${V1}.json" > "$TMP1" 2>/dev/null || { echo "Cannot find telemetry for $V1"; exit 1; }
+    "$MC" cat "minio/$TELEMETRY_BUCKET/latest/build_${V2}.json" > "$TMP2" 2>/dev/null || { echo "Cannot find telemetry for $V2"; exit 1; }
 
     if command -v jq &> /dev/null; then
         local DUR1=$(jq -r '.job_duration_s // 0' "$TMP1")
@@ -176,10 +196,10 @@ cmd_history() {
     echo -e "${BLUE}Last $N Builds:${NC}"
     echo "═══════════════════════════════════════════════════════════════════════"
 
-    $MC ls minio/$TELEMETRY_BUCKET/latest/ 2>/dev/null | grep "build_" | tail -n "$N" | while read -r line; do
+    "$MC" ls minio/$TELEMETRY_BUCKET/latest/ 2>/dev/null | grep "build_" | tail -n "$N" | while read -r line; do
         FILE=$(echo "$line" | awk '{print $NF}')
-        TMP=$(mktemp)
-        $MC cat "minio/$TELEMETRY_BUCKET/latest/$FILE" > "$TMP" 2>/dev/null || continue
+        TMP="$REPORT_DIR/history.json"
+        "$MC" cat "minio/$TELEMETRY_BUCKET/latest/$FILE" > "$TMP" 2>/dev/null || continue
 
         if command -v jq &> /dev/null; then
             VERSION=$(jq -r '.version' "$TMP")

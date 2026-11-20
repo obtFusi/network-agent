@@ -129,6 +129,10 @@ jobs:
         id: version
         run: |
           VERSION_CLEAN="${VERSION#v}"
+          if [[ "$VERSION_CLEAN" == 0.9.0 ]]; then
+            echo "::error::The withdrawn appliance version must not be rebuilt or uploaded"
+            exit 1
+          fi
           echo "VERSION=$VERSION_CLEAN" >> $GITHUB_OUTPUT
           echo "ARTIFACT_NAME=appliance-${VERSION_CLEAN}" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION_CLEAN"
@@ -136,7 +140,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip zstd qemu-utils bc jq
+          sudo apt-get install -y unzip zstd qemu-utils bc jq libguestfs-tools
 
       - name: Setup Packer
         uses: hashicorp/setup-packer@v3
@@ -173,7 +177,7 @@ jobs:
           if [[ -n "$BASE_IMAGE_INPUT" ]]; then
             BASE_IMAGE="$BASE_IMAGE_INPUT"
           else
-            BASE_IMAGE=$(/tmp/mc ls minio/appliance-base/ 2>/dev/null | grep -o 'debian-docker-ollama-[0-9]*\.qcow2' | sort -r | head -1 || echo "")
+            BASE_IMAGE=$(/tmp/mc ls minio/appliance-base/ 2>/dev/null | grep -o 'debian-docker-ollama-secure-[0-9]*\.qcow2' | sort -r | head -1 || echo "")
           fi
 
           if [[ -z "$BASE_IMAGE" ]]; then
@@ -182,9 +186,16 @@ jobs:
             exit 1
           fi
 
+          if [[ ! "$BASE_IMAGE" =~ ^debian-docker-ollama-secure-[0-9]+\.qcow2$ ]]; then
+            echo "::error::Build or select a secure base image first"
+            exit 1
+          fi
+
           echo "Using base image: $BASE_IMAGE"
           mkdir -p infrastructure/packer/input
-          /tmp/mc cp minio/appliance-base/$BASE_IMAGE infrastructure/packer/input/
+          /tmp/mc cp "minio/appliance-base/$BASE_IMAGE" infrastructure/packer/input/
+          /tmp/mc cp "minio/appliance-base/$BASE_IMAGE.sha256" infrastructure/packer/input/
+          (cd infrastructure/packer/input && sha256sum -c -- "$BASE_IMAGE.sha256")
 
           # Verify download
           ls -lh infrastructure/packer/input/$BASE_IMAGE
@@ -210,11 +221,10 @@ jobs:
           BASE_IMAGE_PATH="${{ steps.base-image.outputs.BASE_IMAGE_PATH }}"
 
           echo "Building Network Agent v$VERSION_CLEAN on base image..."
-          packer build \
+          export LIBGUESTFS_BACKEND=direct
+          bash ./build.sh appliance.pkr.hcl "$BASE_IMAGE_PATH" \
             -var "version=${VERSION_CLEAN}" \
-            -var "base_image_url=file://${BASE_IMAGE_PATH}" \
-            -on-error=abort \
-            appliance.pkr.hcl 2>&1 | tee /tmp/packer-build.log
+            -on-error=abort 2>&1 | tee /tmp/packer-build.log
 
           telemetry_step_end "packer_build"
 
@@ -236,20 +246,10 @@ jobs:
           QCOW2=$(ls *.qcow2)
           mv "$QCOW2" "network-agent-${VERSION_CLEAN}.qcow2"
 
-          echo "Splitting into 1.9GB parts..."
-          split -b 1900M -a 2 "network-agent-${VERSION_CLEAN}.qcow2" "network-agent-${VERSION_CLEAN}.qcow2.part-"
-
-          # Rename numeric suffixes to alpha
-          for f in *.part-[0-9][0-9]; do
-            if [[ -f "$f" ]]; then
-              num="${f##*.part-}"
-              first=$(printf "\\x$(printf '%02x' $((97 + 10#$num / 26)))")
-              second=$(printf "\\x$(printf '%02x' $((97 + 10#$num % 26)))")
-              mv "$f" "${f%.part-*}.part-${first}${second}"
-            fi
-          done
-
-          rm -f "network-agent-${VERSION_CLEAN}.qcow2"
+          echo "Compressing the appliance and splitting it into 1.9GB parts..."
+          zstd -T0 -6 "network-agent-${VERSION_CLEAN}.qcow2"
+          split -b 1900M -a 2 "network-agent-${VERSION_CLEAN}.qcow2.zst" "network-agent-${VERSION_CLEAN}.qcow2.zst.part-"
+          rm -f "network-agent-${VERSION_CLEAN}.qcow2" "network-agent-${VERSION_CLEAN}.qcow2.zst"
           echo "Parts created:"
           ls -lh *.part-*
 
@@ -261,11 +261,14 @@ jobs:
           sha256sum *.part-* > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Copy install script
+      - name: Package install and repair scripts
         run: |
           VERSION_CLEAN="${VERSION#v}"
           cp infrastructure/scripts/install-network-agent.sh infrastructure/packer/output/
-          sed -i "s/VERSION:-0.4.0/VERSION:-${VERSION_CLEAN}/" infrastructure/packer/output/install-network-agent.sh
+          cp infrastructure/scripts/repair-appliance-v0.9.0.sh infrastructure/packer/output/
+          cd infrastructure/packer/output
+          sed -i "s/VERSION:-0.4.0/VERSION:-${VERSION_CLEAN}/" install-network-agent.sh
+          sha256sum install-network-agent.sh repair-appliance-v0.9.0.sh > SHA256SUMS.scripts
 
       # ═══════════════════════════════════════════════════════════
       # UPLOAD TO MINIO
@@ -384,6 +387,7 @@ jobs:
 
           cd infrastructure/packer/output
           sha256sum -c SHA256SUMS
+          sha256sum -c SHA256SUMS.scripts
 
           telemetry_step_end "minio_download"
 
@@ -394,14 +398,18 @@ jobs:
           source /tmp/telemetry.sh
           telemetry_step_start "vm_create"
 
-          ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
-          ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
-
-          BUILD_TMP="/root/build-tmp"
+          # Guard the reserved VM ID and mark the VM so cleanup only touches
+          # the guest created by this workflow run.
+          if ssh root@$PVE_HOST "qm config $TEST_VMID" >/dev/null 2>&1; then
+            echo "::error::Test VM ID is already in use"
+            exit 1
+          fi
+          TEST_OWNER="network-agent-appliance-test:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}"
+          BUILD_TMP="/root/build-tmp/network-agent-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ssh root@$PVE_HOST "mkdir -p $BUILD_TMP"
 
           cd infrastructure/packer/output
-          cat *.part-* | ssh root@$PVE_HOST "cat > $BUILD_TMP/network-agent-test.qcow2"
+          cat *.qcow2.zst.part-* | zstd -d -c | ssh root@$PVE_HOST "cat > $BUILD_TMP/network-agent-test.qcow2"
 
           ssh root@$PVE_HOST "qm create $TEST_VMID \
             --name 'network-agent-test' \
@@ -410,6 +418,7 @@ jobs:
             --cpu host \
             --ostype l26 \
             --agent enabled=1 \
+            --description '$TEST_OWNER' \
             --net0 virtio,bridge=vmbr0"
 
           ssh root@$PVE_HOST "qm importdisk $TEST_VMID $BUILD_TMP/network-agent-test.qcow2 local-lvm --format qcow2"
@@ -438,8 +447,8 @@ jobs:
                     jq -r '.[1]["ip-addresses"][]? | select(.["ip-address-type"] == "ipv4") | .["ip-address"]' 2>/dev/null | head -1 || echo "")
 
             if [[ -n "$VM_IP" && "$VM_IP" != "null" && "$VM_IP" != "127.0.0.1" ]]; then
+              printf '::add-mask::%s\n' "$VM_IP"
               echo "VM_IP=$VM_IP" >> $GITHUB_OUTPUT
-              echo "VM IP: $VM_IP"
               break
             fi
             echo "Waiting for IP... ($i/30)"
@@ -478,19 +487,11 @@ jobs:
           VM_IP="${{ steps.vm-ip.outputs.VM_IP }}"
 
           ssh -o StrictHostKeyChecking=no root@$VM_IP bash << 'EOF'
-            printf '%s\n' \
-              'POSTGRES_USER=agent' \
-              'POSTGRES_PASSWORD=test-password-123' \
-              'BASIC_AUTH_USER=admin' \
-              'BASIC_AUTH_HASH=$2a$14$test.hash.for.testing.only' \
-              > /opt/network-agent/.env
-            chmod 600 /opt/network-agent/.env
-
-            mkdir -p /var/lib/network-agent
-            touch /var/lib/network-agent/.initialized
-
+            timeout 300 bash -c 'until test -f /var/lib/network-agent/.initialized; do sleep 5; done'
+            test -s /opt/network-agent/.env
+            test ! -e /var/lib/network-agent/.console-bootstrap-password
             cd /opt/network-agent
-            docker compose up -d
+            docker compose up -d --wait
           EOF
 
           telemetry_step_end "services_start"
@@ -519,6 +520,7 @@ jobs:
           else
             echo "✗ Ollama model not found"
             ssh root@$VM_IP "docker logs ollama --tail 50" || true
+            exit 1
           fi
 
           echo "=== Checking PostgreSQL ==="
@@ -526,6 +528,7 @@ jobs:
             echo "✓ PostgreSQL is ready"
           else
             echo "✗ PostgreSQL not ready"
+            exit 1
           fi
 
           echo "=== Final status ==="
@@ -556,33 +559,6 @@ jobs:
             /tmp/mc cp "$TELEMETRY_JSON" minio/$TELEMETRY_BUCKET/latest/e2e_${VERSION}.json 2>/dev/null || true
           fi
 
-      - name: Cleanup test VM
-        if: success()
-        env:
-          PVE_HOST: ${{ secrets.PVE_HOST }}
-        run: |
-          ssh root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
-          sleep 5
-          ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
-          rm -rf infrastructure/packer/output/ || true
-          sudo fstrim -av || true
-
-      - name: Cleanup on failure
-        if: failure()
-        env:
-          PVE_HOST: ${{ secrets.PVE_HOST }}
-        run: |
-          if [[ -n "$PVE_HOST" ]]; then
-            ssh -o StrictHostKeyChecking=no root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
-            ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge 2>/dev/null || true"
-          fi
-          rm -rf infrastructure/packer/output/ || true
-          sudo fstrim -av || true
-
-      # ═══════════════════════════════════════════════════════════
-      # UPLOAD TO GITHUB RELEASE
-      # ═══════════════════════════════════════════════════════════
-
       - name: Upload to GitHub Release
         if: success() && github.event_name == 'release'
         env:
@@ -592,8 +568,21 @@ jobs:
           gh release upload "${{ github.event.release.tag_name }}" \
             *.part-* \
             SHA256SUMS \
+            SHA256SUMS.scripts \
             install-network-agent.sh \
-            --clobber
+            repair-appliance-v0.9.0.sh
+
+      - name: Cleanup this run's test VM
+        if: always()
+        env:
+          PVE_HOST: ${{ secrets.PVE_HOST }}
+        run: |
+          TEST_OWNER="network-agent-appliance-test:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}"
+          if [[ -n "$PVE_HOST" ]] && ssh root@$PVE_HOST "qm config $TEST_VMID | grep -Fx 'description: $TEST_OWNER'" >/dev/null 2>&1; then
+            ssh root@$PVE_HOST "qm stop $TEST_VMID 2>/dev/null || true"
+            ssh root@$PVE_HOST "qm destroy $TEST_VMID --purge"
+          fi
+          rm -rf infrastructure/packer/output/ || true
 
       - name: Cleanup MinIO artifacts
         if: always()

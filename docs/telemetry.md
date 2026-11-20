@@ -289,7 +289,14 @@ Lists last N builds with version, timestamp, and duration.
 |----------|---------|-------------|
 | `TELEMETRY_DIR` | `/tmp/telemetry` | Directory for telemetry files |
 | `TELEMETRY_BUCKET` | `appliance-telemetry` | MinIO bucket name |
-| `MINIO_ENDPOINT` | `http://10.0.0.165:9000` | MinIO server URL |
+| `MINIO_ENDPOINT` | Required | MinIO server URL |
+| `MINIO_ACCESS_KEY` | Required | Telemetry read access key |
+| `MINIO_SECRET_KEY` | Required | Telemetry read secret key |
+
+Export the endpoint from the deployment environment and the access keys from
+the project credential file before running a report. An installed MinIO Client
+uses a temporary configuration for the report. The client reuses CA
+certificates from its configured CA directory.
 | `MINIO_ACCESS_KEY` | (from secrets) | MinIO access credentials |
 | `MINIO_SECRET_KEY` | (from secrets) | MinIO secret credentials |
 
