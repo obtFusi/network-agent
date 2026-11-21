@@ -387,7 +387,6 @@ gh workflow run docker-build.yml -f version=0.9.0
 | Build and push | Multi-tag: `version` + `latest` |
 
 **Tags:**
-- `ghcr.io/obtfusi/network-agent:0.9.0`
 - `ghcr.io/obtfusi/network-agent:latest`
 
 ### 2.8 Self-hosted Runner
