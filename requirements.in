@@ -6,7 +6,7 @@ openai==2.21.0
 
 # Configuration
 pyyaml==6.0.3
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 
 # Network Tools
 dnspython==2.8.0
