@@ -185,81 +185,15 @@ docker run -it --rm --env-file .env network-agent:latest
 
 > **Note:** Docker Compose automatically starts SearXNG for web searches. Without `--network host`, LAN scanning is limited.
 
-### Alternative: Proxmox Appliance
+### Proxmox Appliance
 
-For a turnkey solution, there's a preconfigured **Proxmox VM** with everything preinstalled:
+The public Proxmox appliance download has been withdrawn. Fresh installations
+require a verified replacement release. For an already installed VM, see the
+[v0.9.0 release notice](https://github.com/obtFusi/network-agent/releases/tag/v0.9.0)
+for the in-place repair guidance.
 
 <details>
-<summary><strong>One-Click Installation on Proxmox</strong></summary>
-
-**What's included?**
-- Network Agent (preinstalled)
-- Ollama with Qwen3 (local LLM, no API key needed)
-  - **Standard:** Qwen3 4B Instruct (~3GB, optimized for CPU-only)
-  - **Optional:** Qwen3 30B-A3B (~20GB, better quality with more RAM)
-- Caddy Reverse Proxy (HTTPS + Basic Auth)
-- PostgreSQL (Database)
-- Offline-capable (no external dependencies at runtime)
-
-**System Requirements:**
-
-| Mode | RAM | CPU | Disk | Model |
-|------|-----|-----|------|-------|
-| Standard (CPU) | 8-16 GB | 4+ Cores | 50 GB | Qwen3 4B Instruct |
-| High-Quality | 24-32 GB | 4-8 Cores | 100 GB | Qwen3 30B-A3B |
-
-**Installation (One-Click):**
-
-```bash
-# Run on the Proxmox host:
-curl -sSL https://github.com/obtFusi/network-agent/releases/latest/download/install-network-agent.sh | bash -s -- 200
-
-# Or with custom storage:
-curl -sSL https://github.com/obtFusi/network-agent/releases/latest/download/install-network-agent.sh | bash -s -- 200 ceph-pool
-```
-
-The script:
-1. Downloads the image (~8GB compressed, 14 parts)
-2. Verifies SHA256 checksums
-3. Decompresses to ~22GB qcow2
-4. Creates VM 200 with optimal settings
-5. Ready to start!
-
-**Manual Download:**
-
-```bash
-# Download all parts + checksums
-VERSION="0.12.0"
-for part in aa ab ac ad ae af ag ah ai aj ak al am an; do
-  wget "https://github.com/obtFusi/network-agent/releases/download/v${VERSION}/network-agent-${VERSION}.qcow2.zst.part-${part}"
-done
-wget "https://github.com/obtFusi/network-agent/releases/download/v${VERSION}/SHA256SUMS"
-
-# Verify checksums (IMPORTANT!)
-sha256sum -c SHA256SUMS
-
-# Combine and decompress
-cat network-agent-${VERSION}.qcow2.zst.part-* | zstd -d -o network-agent.qcow2
-
-# Create VM
-qm create 200 --name network-agent --memory 16384 --cores 4 --cpu host
-qm importdisk 200 network-agent.qcow2 local-lvm --format qcow2
-qm set 200 --scsi0 local-lvm:vm-200-disk-0 --boot order=scsi0
-qm set 200 --net0 virtio,bridge=vmbr0
-```
-
-**First Boot:**
-
-```bash
-qm start 200
-qm terminal 200
-```
-
-On first login:
-1. Automatic first-boot starts
-2. Set new root password (required!)
-3. Web credentials are generated and displayed
-4. Services start automatically
+<summary><strong>Existing appliance reference</strong></summary>
 
 **Access:**
 - Web UI: `https://<VM-IP>` (credentials from first-boot)

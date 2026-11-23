@@ -370,13 +370,13 @@ appliance-builds/
 
 ### 2.7 Docker Build Workflow (`.github/workflows/docker-build.yml`)
 
-**Trigger:** Push on `main` (when Dockerfile, Code, Config change) or `workflow_dispatch`
-**Purpose:** Push Docker image to ghcr.io
+The public container package has been withdrawn. The appliance Compose file
+references that package and cannot pull it on a fresh host. Keep the image and
+persistent volumes of an existing installation in place pending an approved
+replacement release.
 
-```yaml
-# Manually trigger with version
-gh workflow run docker-build.yml -f version=0.9.0
-```
+**Trigger:** Push on `main` (when Dockerfile, Code, Config change) or `workflow_dispatch`
+**Purpose:** Push Docker image to ghcr.io when publication resumes.
 
 **Steps:**
 
@@ -386,7 +386,8 @@ gh workflow run docker-build.yml -f version=0.9.0
 | Extract metadata | Version from cli.py or Input |
 | Build and push | Multi-tag: `version` + `latest` |
 
-**Tags:**
+**Former public tag**
+
 - `ghcr.io/obtfusi/network-agent:latest`
 
 ### 2.8 Self-hosted Runner
